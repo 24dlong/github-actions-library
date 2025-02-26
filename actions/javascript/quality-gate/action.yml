@@ -1,0 +1,33 @@
+name: Quality Gate
+description: To ensure code quality, runs lint, test, and build steps for a javascript repository managed with yarn.
+runs:
+  using: composite
+  steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Environment
+        run: make setup-env
+        shell: bash
+
+      - name: Set Node & Yarn Versions
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+
+      - name: Install Dependencies
+        run: make install
+        shell: bash
+
+      - name: Lint
+        run: make lint
+        shell: bash
+
+      - name: Test
+        run: make test
+        shell: bash
+
+      - name: Build
+        run: make build
+        shell: bash
