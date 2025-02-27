@@ -1,0 +1,24 @@
+name: Quality Gate
+description: To ensure code quality, runs lint, test, and build steps.
+runs:
+  using: composite
+  steps:
+      - name: Setup Environment
+        run: make setup-env
+        shell: bash
+
+      - name: Install Dependencies
+        run: make install
+        shell: bash
+
+      - name: Lint
+        run: make lint
+        shell: bash
+
+      - name: Test
+        run: make coverage
+        shell: bash
+
+      - name: Build
+        run: make build
+        shell: bash
