@@ -1,0 +1,21 @@
+name: Merge Workflow
+
+on:
+  push:
+    branches:
+      - test
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write # to be able to publish a GitHub release
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Bump Version
+        run: cz bump
