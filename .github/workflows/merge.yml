@@ -6,24 +6,15 @@ on:
       - test
 
 jobs:
-  publish:
-    name: Publish
+  bump-version:
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: write # to be able to publish a GitHub release
-
+    name: Bump Version & Create Changelog
     steps:
-      - name: Checkout Code
+      - name: Check out
         uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-
-      - name: Install Commitizen
-        run: |
-          python -m pip install --upgrade pip
-          pip install commitizen
-
-      - name: Bump Version
-        run: cz bump
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - uses: commitizen-tools/commitizen-action@0.24.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
