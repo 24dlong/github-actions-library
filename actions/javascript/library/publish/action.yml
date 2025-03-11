@@ -1,0 +1,58 @@
+name: Publish
+description: Runs Quality Gate Checks and Publishes a JavaScript library to AWS CodeArtifact.
+
+inputs:
+  GITHUB_TOKEN:
+    description: GitHub token from the calling workflow
+    required: true
+  AWS_ACCOUNT_ID:
+    description: AWS Account ID hosting CodeArtifact
+    required: true
+  AWS_REGION:
+    description: AWS region hosting CodeArtifact
+    required: true
+  AWS_ROLE_TO_ASSUME:
+    description: AWS role to assume for CodeArtifact repository access
+    required: true
+  AWS_CODE_ARTIFACT_DOMAIN:
+    description: AWS CodeArtifact domain
+    required: true
+  AWS_CODE_ARTIFACT_REPOSITORY:
+    description: AWS CodeArtifact repository
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Quality Gate
+      # TODO: This technically creates an issue where an older version of the publish action
+      # could call the latest version of the quality-gate action on main. This is not ideal as it
+      # doesn't protect against breaking changes in the quality-gate action. However, GitHub
+      # currently doesn't allow local references in composite actions, accessing the version of
+      # composite action called, or passing any variable to the uses parameter. Since this will only be
+      # used internally, taking this as the lesser of two evils, rather than duplicating the
+      # quality-gate steps here.
+      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@main
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: ${{ inputs.AWS_REGION }}
+        role-to-assume: ${{ inputs.AWS_ROLE_TO_ASSUME }}
+
+    - name: Generate Token
+      run: |
+        echo "CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token \
+        --domain ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }} \
+        --domain-owner ${{ inputs.AWS_ACCOUNT_ID }} \
+        --query authorizationToken \
+        --output text)" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Release
+      env:
+        GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+        NPM_TOKEN: ${{ env.CODEARTIFACT_AUTH_TOKEN }}
+        NPM_CONFIG_REGISTRY: "https://${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}-${{ inputs.AWS_ACCOUNT_ID }}.d.codeartifact.${{ inputs.AWS_REGION }}.amazonaws.com/npm/${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}/"
+      run: make publish
+      shell: bash
