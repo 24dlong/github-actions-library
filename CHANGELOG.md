@@ -1,3 +1,9 @@
+## 1.2.0 (2025-03-15)
+
+### Feat
+
+- add a composite action for publishing javascript libraries (#10)
+
 ## 1.1.1 (2025-03-07)
 
 ### Fix
