@@ -25,14 +25,14 @@ runs:
   using: composite
   steps:
     - name: Quality Gate
-      # TODO: This technically creates an issue where an older version of the publish action
-      # could call the latest version of the quality-gate action on main. This is not ideal as it
-      # doesn't protect against breaking changes in the quality-gate action. However, GitHub
-      # currently doesn't allow local references in composite actions, accessing the version of
-      # composite action called, or passing any variable to the uses parameter. Since this will only be
-      # used internally, taking this as the lesser of two evils, rather than duplicating the
+      # TODO: This technically creates a potential issue where an older version of the publish action
+      # could call a later version of the quality-gate action. This isn't a problem if breaking changes
+      # in the quality-gate action are properly managed with major versions, however, it's not ideal.
+      # However, GitHub currently doesn't allow local references in composite actions, accessing the
+      # version of composite action called, or passing any variable to the uses parameter. Since this will
+      # only be used internally, taking this as the lesser of two evils, rather than duplicating the
       # quality-gate steps here.
-      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@main
+      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v1
 
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
