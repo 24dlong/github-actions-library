@@ -1,3 +1,9 @@
+## 1.2.1 (2025-03-15)
+
+### Refactor
+
+- pin quality-gate major version within publish action (#11)
+
 ## 1.2.0 (2025-03-15)
 
 ### Feat
