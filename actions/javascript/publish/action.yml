@@ -1,0 +1,26 @@
+name: Publish
+description: Runs Quality Gate checks and creates a GitHub release for a generic JavaScript repository.
+
+inputs:
+  GITHUB_TOKEN:
+    description: GitHub token from the calling workflow
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Quality Gate
+      # TODO: This technically creates a potential issue where an older version of the publish action
+      # could call a later version of the quality-gate action. This isn't a problem if breaking changes
+      # in the quality-gate action are properly managed with major versions, however, it's not ideal.
+      # However, GitHub currently doesn't allow local references in composite actions, accessing the
+      # version of composite action called, or passing any variable to the uses parameter. Since this will
+      # only be used internally, taking this as the lesser of two evils, rather than duplicating the
+      # quality-gate steps here.
+      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v1
+
+    - name: Release
+      env:
+        GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+      run: make publish
+      shell: bash
