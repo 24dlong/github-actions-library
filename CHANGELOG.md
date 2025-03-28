@@ -1,3 +1,9 @@
+## 1.3.0 (2025-03-28)
+
+### Feat
+
+- introduces a generic javascript publish action (#13)
+
 ## 1.2.1 (2025-03-15)
 
 ### Refactor
