@@ -18,13 +18,13 @@ Requires a Makefile with the following commands implemented:
 - `make build`: Builds the project.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v1
+uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v2
 ```
 
 ### Publish
 Executes the quality gate action and executes a publish command if checks pass.
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/publish@v1
+uses: 24dlong/github-actions-library/actions/javascript/publish@v2
 with:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -36,7 +36,7 @@ create a GitHub release and version tag.
 ### Library Publish
 Runs quality checks and publishes a JavaScript library to AWS CodeArtifact.
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/library/publish@v1
+uses: 24dlong/github-actions-library/actions/javascript/library/publish@v2
 with:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   AWS_ACCOUNT_ID: "your-account-id"
