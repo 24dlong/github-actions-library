@@ -1,3 +1,8 @@
+## 2.0.2 (2025-04-16)
+
+
+- chore: migrate all actions to use quality-gate@v2 (#17)
+
 ## 2.0.1 (2025-04-16)
 
 
