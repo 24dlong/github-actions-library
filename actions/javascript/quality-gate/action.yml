@@ -1,5 +1,5 @@
 name: Quality Gate
-description: To ensure code quality, runs lint, test, and build steps for a javascript repository managed with yarn.
+description: To ensure code quality, runs lint, test, and build steps for a javascript repository managed with pnpm.
 runs:
   using: composite
   steps:
@@ -10,11 +10,15 @@ runs:
         run: make setup-env
         shell: bash
 
-      - name: Set Node & Yarn Versions
+      # without an explicit version, will grab the packageManager version from the package.json
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-          cache: yarn
+          cache: 'pnpm'
 
       - name: Install Dependencies
         run: make install
