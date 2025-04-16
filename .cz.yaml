@@ -1,19 +1,19 @@
 ---
 commitizen:
-  name: cz_customize
-  tag_format: $version
-  update_changelog_on_bump: true
-  version: 2.0.0
-  version_scheme: semver
   customize:
-    bump_pattern: "^(feat|fix|perf|refactor|chore|style|build|docs|test)"
     bump_map:
+      build: PATCH
+      chore: PATCH
+      docs: PATCH
       feat: MINOR
       fix: PATCH
       perf: PATCH
       refactor: PATCH
-      chore: PATCH
       style: PATCH
-      build: PATCH
-      docs: PATCH
       test: PATCH
+    bump_pattern: ^(feat|fix|perf|refactor|chore|style|build|docs|test)
+  name: cz_customize
+  tag_format: $version
+  update_changelog_on_bump: true
+  version: 2.0.1
+  version_scheme: semver

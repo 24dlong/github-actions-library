@@ -1,3 +1,8 @@
+## 2.0.1 (2025-04-16)
+
+
+- build: add additional commit verbs to the commitizen bump map (#16)
+
 ## 2.0.0 (2025-04-16)
 
 ### BREAKING CHANGE
