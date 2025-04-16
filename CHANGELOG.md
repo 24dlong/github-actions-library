@@ -1,3 +1,12 @@
+## 2.0.0 (2025-04-16)
+
+### BREAKING CHANGE
+
+- requires the use of pnpm instead of yarn as the package manager
+
+
+- migrate from yarn to pnpm (#15)
+
 ## 1.3.0 (2025-03-28)
 
 ### Feat
