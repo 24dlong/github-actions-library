@@ -1,3 +1,9 @@
+## 2.1.2 (2025-07-21)
+
+
+- fix(visual-tests): use proper composite action syntax (#20)
+- ci: rename quality gate job (#21)
+
 ## 2.1.1 (2025-07-21)
 
 
