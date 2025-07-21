@@ -1,4 +1,3 @@
-name: Quality Gate
 description: To ensure code quality, runs lint, test, and build steps for a javascript repository managed with pnpm.
 runs:
   using: composite
