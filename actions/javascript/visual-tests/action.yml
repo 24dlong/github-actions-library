@@ -1,6 +1,5 @@
 visual-tests:
   description: To ensure code quality, runs visual tests for a javascript React application using Chromatic
-  runs-on: ubuntu-latest
   steps:
     - name: Checkout code
       uses: actions/checkout@v4
