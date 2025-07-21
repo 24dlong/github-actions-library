@@ -1,3 +1,8 @@
+## 2.1.3 (2025-07-21)
+
+
+- fix(visual-tests): add missing shell attribute (#22)
+
 ## 2.1.2 (2025-07-21)
 
 
