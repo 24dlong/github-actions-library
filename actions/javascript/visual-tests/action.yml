@@ -23,6 +23,7 @@ runs:
 
     - name: Install dependencies
       run: make install
+      shell: bash
 
     - uses: chromaui/action@v13
       with:
