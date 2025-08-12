@@ -1,3 +1,8 @@
+## 2.1.4 (2025-08-12)
+
+
+- refactor: decouple visual test execution from action status control (#23)
+
 ## 2.1.3 (2025-07-21)
 
 
