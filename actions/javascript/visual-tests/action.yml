@@ -28,4 +28,7 @@ runs:
     - uses: chromaui/action@v13
       with:
         projectToken: ${{ inputs.projectToken }}
-        exitZeroOnChanges: false # Fail workflow if changes are found
+        # This action is just responsible for kicking off the tests
+        # Chromatic will then trigger the UI Tests action which is responsible for
+        # either pass or fail based on a Chromatic review
+        exitZeroOnChanges: true
