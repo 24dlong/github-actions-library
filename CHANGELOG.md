@@ -1,3 +1,8 @@
+## 2.1.5 (2025-08-13)
+
+
+- fix(visual-tests): auto accept visual changes merged into main (#24)
+
 ## 2.1.4 (2025-08-12)
 
 
