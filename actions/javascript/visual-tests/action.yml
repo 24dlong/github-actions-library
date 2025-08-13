@@ -32,3 +32,8 @@ runs:
         # Chromatic will then trigger the UI Tests action which is responsible for
         # either pass or fail based on a Chromatic review
         exitZeroOnChanges: true
+        # This strategy is explained here: https://www.chromatic.com/docs/github-actions/#github-squashrebase-merge-and-the-main-branch
+        # If you’re using this functionality but notice the incoming changes were not accepted
+        # as baselines in Chromatic, then you’ll need to adjust the workflow to include a new
+        # step with the autoAcceptChanges option.
+        autoAcceptChanges: "main"
