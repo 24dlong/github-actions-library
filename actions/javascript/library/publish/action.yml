@@ -34,25 +34,8 @@ runs:
       # quality-gate steps here.
       uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v2
 
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-region: ${{ inputs.AWS_REGION }}
-        role-to-assume: ${{ inputs.AWS_ROLE_TO_ASSUME }}
-
-    - name: Generate Token
-      run: |
-        echo "CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token \
-        --domain ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }} \
-        --domain-owner ${{ inputs.AWS_ACCOUNT_ID }} \
-        --query authorizationToken \
-        --output text)" >> $GITHUB_ENV
-      shell: bash
-
     - name: Release
       env:
         GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
-        NPM_TOKEN: ${{ env.CODEARTIFACT_AUTH_TOKEN }}
-        NPM_CONFIG_REGISTRY: "https://${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}-${{ inputs.AWS_ACCOUNT_ID }}.d.codeartifact.${{ inputs.AWS_REGION }}.amazonaws.com/npm/${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}/"
       run: make publish
       shell: bash
