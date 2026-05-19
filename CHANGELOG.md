@@ -1,3 +1,8 @@
+## 3.0.1 (2026-05-19)
+
+
+- build(config): add support for ! commits as a method for indicating breaking changes (#29)
+
 ## 3.0.0 (2026-05-19)
 
 
