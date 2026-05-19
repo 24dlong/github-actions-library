@@ -1,3 +1,8 @@
+## 2.2.1 (2026-05-19)
+
+
+- build(publish): ensure breaking changes result in major version bumps (#27)
+
 ## 2.2.0 (2026-05-19)
 
 
