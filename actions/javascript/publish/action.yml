@@ -5,6 +5,24 @@ inputs:
   GITHUB_TOKEN:
     description: GitHub token from the calling workflow
     required: true
+  AWS_ACCOUNT_ID:
+    description: AWS Account ID hosting CodeArtifact
+    required: true
+  AWS_REGION:
+    description: AWS region hosting CodeArtifact
+    required: true
+  AWS_ROLE_TO_ASSUME:
+    description: AWS role to assume for CodeArtifact repository access
+    required: true
+  AWS_CODE_ARTIFACT_DOMAIN:
+    description: AWS CodeArtifact domain
+    required: true
+  AWS_CODE_ARTIFACT_REPOSITORY:
+    description: AWS CodeArtifact repository
+    required: true
+  REGISTRY_NAMESPACE:
+    description: Namespace to use for registry authentication.
+    required: true
 
 runs:
   using: composite
