@@ -1,3 +1,9 @@
+## 2.2.0 (2026-05-19)
+
+
+- feat: adds support for private registry installs (#26)
+- BREAKING CHANGE: to standardize to one registry auth process, the publish command has been migrated to use a registry-auth make command as well
+
 ## 2.1.5 (2025-08-13)
 
 
