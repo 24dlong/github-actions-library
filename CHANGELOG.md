@@ -1,3 +1,9 @@
+## 3.0.0 (2026-05-19)
+
+
+- fix(actions): updates internal quality-gate usage to v3 (#28)
+- BREAKING CHANGE: to standardize to one registry auth process, both the publish command and the install command should now include private registry authentication built in
+
 ## 2.2.1 (2026-05-19)
 
 
