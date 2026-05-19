@@ -3,6 +3,7 @@ commitizen:
   customize:
     bump_map:
       BREAKING CHANGE: MAJOR
+      \w+!: MAJOR
       build: PATCH
       chore: PATCH
       docs: PATCH
@@ -12,7 +13,7 @@ commitizen:
       refactor: PATCH
       style: PATCH
       test: PATCH
-    bump_pattern: ^(BREAKING CHANGE|feat|fix|perf|refactor|chore|style|build|docs|test)
+    bump_pattern: ^(BREAKING CHANGE|\w+!|feat|fix|perf|refactor|chore|style|build|docs|test)
   name: cz_customize
   tag_format: $version
   update_changelog_on_bump: true
