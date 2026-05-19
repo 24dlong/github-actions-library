@@ -32,7 +32,15 @@ runs:
       # version of composite action called, or passing any variable to the uses parameter. Since this will
       # only be used internally, taking this as the lesser of two evils, rather than duplicating the
       # quality-gate steps here.
-      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v2
+      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v3
+      with:
+        AWS_ACCOUNT_ID: ${{ inputs.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+        AWS_REGION: ${{ inputs.AWS_REGION }}
+        AWS_ROLE_TO_ASSUME: ${{ inputs.AWS_ROLE_TO_ASSUME }}
+        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
+        AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
+        REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
+
 
     - name: Release
       env:
