@@ -1,4 +1,26 @@
+name: Quality Gate
 description: To ensure code quality, runs lint, test, and build steps for a javascript repository managed with pnpm.
+
+inputs:
+  AWS_ACCOUNT_ID:
+    description: AWS Account ID hosting CodeArtifact
+    required: true
+  AWS_REGION:
+    description: AWS region hosting CodeArtifact
+    required: true
+  AWS_ROLE_TO_ASSUME:
+    description: AWS role to assume for CodeArtifact repository access
+    required: true
+  AWS_CODE_ARTIFACT_DOMAIN:
+    description: AWS CodeArtifact domain
+    required: true
+  AWS_CODE_ARTIFACT_REPOSITORY:
+    description: AWS CodeArtifact repository
+    required: true
+  REGISTRY_NAMESPACE:
+    description: Namespace to use for registry authentication.
+    required: true
+
 runs:
   using: composite
   steps:
@@ -19,7 +41,18 @@ runs:
           node-version-file: .nvmrc
           cache: 'pnpm'
 
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ inputs.AWS_REGION }}
+          role-to-assume: ${{ inputs.AWS_ROLE_TO_ASSUME }}
+
       - name: Install Dependencies
+        env:
+            AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
+            AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
+            AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
+            REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
         run: make install
         shell: bash
 
