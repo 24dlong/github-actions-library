@@ -20,6 +20,9 @@ inputs:
   AWS_CODE_ARTIFACT_REPOSITORY:
     description: AWS CodeArtifact repository
     required: true
+  REGISTRY_NAMESPACE:
+    description: Namespace to use for registry authentication.
+    required: true
 
 runs:
   using: composite
