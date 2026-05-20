@@ -1,3 +1,8 @@
+## 3.0.4 (2026-05-20)
+
+
+- fix(publish): fix typo in publish input (#32)
+
 ## 3.0.3 (2026-05-19)
 
 
