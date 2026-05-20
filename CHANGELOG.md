@@ -1,3 +1,8 @@
+## 3.0.5 (2026-05-20)
+
+
+- fix(publish): add missing env vars to publish step (#33)
+
 ## 3.0.4 (2026-05-20)
 
 
