@@ -47,5 +47,11 @@ runs:
     - name: Release
       env:
         GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
+        AWS_REGION: ${{ inputs.AWS_REGION }}
+        AWS_ROLE_TO_ASSUME: ${{ inputs.AWS_ROLE_TO_ASSUME }}
+        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
+        AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
+        REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
       run: make publish
       shell: bash
