@@ -1,0 +1,42 @@
+name: Expo Quality Gate
+description: Runs JavaScript quality checks and Expo compatibility checks for an Expo repository.
+
+inputs:
+  AWS_ACCOUNT_ID:
+    description: AWS Account ID hosting CodeArtifact
+    required: true
+  AWS_REGION:
+    description: AWS region hosting CodeArtifact
+    required: true
+  AWS_ROLE_TO_ASSUME:
+    description: AWS role to assume for CodeArtifact repository access
+    required: true
+  AWS_CODE_ARTIFACT_DOMAIN:
+    description: AWS CodeArtifact domain
+    required: true
+  AWS_CODE_ARTIFACT_REPOSITORY:
+    description: AWS CodeArtifact repository
+    required: true
+  REGISTRY_NAMESPACE:
+    description: Namespace to use for registry authentication.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Quality Gate
+      # TODO: This technically creates a potential issue where an older version of the expo quality-gate
+      # action could call a later version of the base quality-gate action. This follows the same tradeoff
+      # as the publish actions to avoid duplicating the base quality-gate steps here.
+      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v3
+      with:
+        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
+        AWS_REGION: ${{ inputs.AWS_REGION }}
+        AWS_ROLE_TO_ASSUME: ${{ inputs.AWS_ROLE_TO_ASSUME }}
+        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
+        AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
+        REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
+
+    - name: Expo Doctor
+      run: npx expo-doctor
+      shell: bash
