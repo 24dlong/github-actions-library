@@ -1,3 +1,8 @@
+## 3.1.0 (2026-07-07)
+
+
+- feat(visual-tests): support private registry auth (#35)
+
 ## 3.0.5 (2026-05-20)
 
 
