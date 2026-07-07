@@ -1,9 +1,29 @@
+name: Visual Tests
 description: To ensure code quality, runs visual tests for a javascript React application using Chromatic
 
 inputs:
-  projectToken:
+  CHROMATIC_PROJECT_TOKEN:
     description: Chromatic project token
     required: true
+  AWS_ACCOUNT_ID:
+    description: AWS Account ID hosting CodeArtifact
+    required: true
+  AWS_REGION:
+    description: AWS region hosting CodeArtifact
+    required: true
+  AWS_ROLE_TO_ASSUME:
+    description: AWS role to assume for CodeArtifact repository access
+    required: true
+  AWS_CODE_ARTIFACT_DOMAIN:
+    description: AWS CodeArtifact domain
+    required: true
+  AWS_CODE_ARTIFACT_REPOSITORY:
+    description: AWS CodeArtifact repository
+    required: true
+  REGISTRY_NAMESPACE:
+    description: Namespace to use for registry authentication.
+    required: true
+
 
 runs:
   using: composite
@@ -12,6 +32,10 @@ runs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
+        # 👇 Tells the checkout which commit hash to reference
+        # Mentioned in the docs here:
+        # https://www.chromatic.com/docs/github-actions/#recommended-configuration-for-build-events
+        ref: ${{ github.event.pull_request.head.ref }}
 
     - name: Setup pnpm
       uses: pnpm/action-setup@v4
@@ -21,13 +45,25 @@ runs:
         node-version-file: .nvmrc
         cache: "pnpm"
 
-    - name: Install dependencies
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: ${{ inputs.AWS_REGION }}
+        role-to-assume: ${{ inputs.AWS_ROLE_TO_ASSUME }}
+
+    - name: Install Dependencies
+      env:
+          AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
+          AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
+          AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
+          REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
       run: make install
       shell: bash
 
-    - uses: chromaui/action@v13
+    - name: Run Chromatic
+      uses: chromaui/action@v18
       with:
-        projectToken: ${{ inputs.projectToken }}
+        projectToken: ${{ inputs.CHROMATIC_PROJECT_TOKEN }}
         # This action is just responsible for kicking off the tests
         # Chromatic will then trigger the UI Tests action which is responsible for
         # either pass or fail based on a Chromatic review
@@ -36,4 +72,8 @@ runs:
         # If you’re using this functionality but notice the incoming changes were not accepted
         # as baselines in Chromatic, then you’ll need to adjust the workflow to include a new
         # step with the autoAcceptChanges option.
-        autoAcceptChanges: "main"
+        # autoAcceptChanges: "main"
+      env:
+          CHROMATIC_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          CHROMATIC_SHA: ${{ github.event.pull_request.head.sha || github.ref }}
+          CHROMATIC_SLUG: ${{ github.repository }}
