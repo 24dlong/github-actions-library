@@ -1,3 +1,8 @@
+## 3.2.0 (2026-07-07)
+
+
+- feat(expo): adds a quality gate for expo projects (#36)
+
 ## 3.1.0 (2026-07-07)
 
 
