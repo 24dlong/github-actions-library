@@ -1,3 +1,8 @@
+## 3.3.0 (2026-07-08)
+
+
+- feat(visual-tests): autoAcceptChanges on the main branch (#37)
+
 ## 3.2.0 (2026-07-07)
 
 
