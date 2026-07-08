@@ -72,7 +72,9 @@ runs:
         # If you’re using this functionality but notice the incoming changes were not accepted
         # as baselines in Chromatic, then you’ll need to adjust the workflow to include a new
         # step with the autoAcceptChanges option.
-        # autoAcceptChanges: "main"
+        # If we run this on main, we want to auto accept changes, assuming this already ran on
+        # the incoming PR
+        autoAcceptChanges: "main"
       env:
           CHROMATIC_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
           CHROMATIC_SHA: ${{ github.event.pull_request.head.sha || github.ref }}
