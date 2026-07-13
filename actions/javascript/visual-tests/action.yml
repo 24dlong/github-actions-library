@@ -60,6 +60,11 @@ runs:
       run: make install
       shell: bash
 
+    # Chromatic runs build-storybook for the web, but we need to check the native storybook ourselves
+    - name: Build iOS Storybook
+      run: pnpm build-storybook:ios
+      shell: bash
+
     - name: Run Chromatic
       uses: chromaui/action@v18
       with:
