@@ -1,3 +1,8 @@
+## 3.4.0 (2026-07-13)
+
+
+- feat: add a check to build ios storybook (#38)
+
 ## 3.3.0 (2026-07-08)
 
 
