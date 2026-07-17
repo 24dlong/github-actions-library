@@ -60,6 +60,15 @@ runs:
       run: make install
       shell: bash
 
+    # Run storybook doctor
+    - name: Run Storybook Doctor for Web
+      run: pnpm doctor:storybook:web
+      shell: bash
+
+    - name: Run Storybook Doctor for Native
+      run: pnpm doctor:storybook:native
+      shell: bash
+
     # Chromatic runs build-storybook for the web, but we need to check the native storybook ourselves
     - name: Build iOS Storybook
       run: pnpm build-storybook:ios
