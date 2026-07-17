@@ -1,3 +1,8 @@
+## 3.5.0 (2026-07-17)
+
+
+- feat: add storybook doctor checks (#39)
+
 ## 3.4.0 (2026-07-13)
 
 
