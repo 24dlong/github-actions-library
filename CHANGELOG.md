@@ -1,3 +1,8 @@
+## 3.6.0 (2026-07-19)
+
+
+- feat: add storybook upgrade action (#40)
+
 ## 3.5.0 (2026-07-17)
 
 
