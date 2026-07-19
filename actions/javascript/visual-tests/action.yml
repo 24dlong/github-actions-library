@@ -37,28 +37,15 @@ runs:
         # https://www.chromatic.com/docs/github-actions/#recommended-configuration-for-build-events
         ref: ${{ github.event.pull_request.head.ref }}
 
-    - name: Setup pnpm
-      uses: pnpm/action-setup@v4
-
-    - uses: actions/setup-node@v4
+    - name: Setup JavaScript
+      uses: 24dlong/github-actions-library/actions/javascript/setup@v3
       with:
-        node-version-file: .nvmrc
-        cache: "pnpm"
-
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-region: ${{ inputs.AWS_REGION }}
-        role-to-assume: ${{ inputs.AWS_ROLE_TO_ASSUME }}
-
-    - name: Install Dependencies
-      env:
-          AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
-          AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
-          AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
-          REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
-      run: make install
-      shell: bash
+        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
+        AWS_REGION: ${{ inputs.AWS_REGION }}
+        AWS_ROLE_TO_ASSUME: ${{ inputs.AWS_ROLE_TO_ASSUME }}
+        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
+        AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
+        REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
 
     # Run storybook doctor
     - name: Run Storybook Doctor for Web
