@@ -101,8 +101,17 @@ runs:
           --disable-telemetry \
           --loglevel info \
           --logfile debug-storybook.log
+          --no-frozen-lockfile
         exit_code=$?
         set -e
+
+        if [ "$exit_code" -ne 0 ] && [ -f debug-storybook.log ]; then
+          echo "::group::Storybook debug log"
+          cat debug-storybook.log
+          echo "::endgroup::"
+        fi
+
+        pnpm install --no-frozen-lockfile
 
         rm -f debug-storybook.log
         echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
