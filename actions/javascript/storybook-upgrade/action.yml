@@ -42,10 +42,13 @@ inputs:
 outputs:
   changed:
     description: Whether the Storybook upgrade changed repository files.
-    value: ${{ steps.changes.outputs.changed }}
+    value: ${{ steps.commit.outputs.changed }}
   upgrade-exit-code:
     description: Exit code returned by the Storybook upgrade command.
     value: ${{ steps.upgrade.outputs.exit_code }}
+  manual-migrations-required:
+    description: Whether Storybook reported manual migration instructions.
+    value: ${{ steps.upgrade.outputs.manual_migrations_required }}
 
 runs:
   using: composite
@@ -93,6 +96,7 @@ runs:
       id: upgrade
       env:
         STORYBOOK_TARGET: ${{ steps.target.outputs.target }}
+        CI: false # to avoid pnpm frozen lockfile
       run: |
         set +e
         pnpm dlx "storybook@${STORYBOOK_TARGET}" upgrade \
@@ -104,64 +108,63 @@ runs:
         exit_code=$?
         set -e
 
+        migration_notes_file="${RUNNER_TEMP}/storybook-manual-migrations.txt"
+        rm -f "$migration_notes_file"
+
+        if [ "$exit_code" -ne 0 ] && [ -f debug-storybook.log ]; then
+          echo "::group::Storybook debug log"
+          cat debug-storybook.log
+          echo "::endgroup::"
+        fi
+
+        if [ -f debug-storybook.log ]; then
+          awk '
+            /automigration couldn.t make the changes but here are instructions for doing them yourself:/ {
+              capture = 1
+            }
+            capture && /^[[:space:]]+at / {
+              capture = 0
+              next
+            }
+            capture {
+              sub(/^[[:space:]]*\[[^]]+\] \[[^]]+\][[:space:]]*/, "")
+              print
+            }
+          ' debug-storybook.log > "$migration_notes_file"
+        fi
+
         rm -f debug-storybook.log
         echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+
+        if [ -s "$migration_notes_file" ]; then
+          echo "manual_migrations_required=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "manual_migrations_required=false" >> "$GITHUB_OUTPUT"
+        fi
 
         if [ "$exit_code" -ne 0 ]; then
           echo "::warning::Storybook upgrade exited with code $exit_code"
         fi
       shell: bash
 
-    - name: Detect changes
-      id: changes
-      run: |
-        if [ -z "$(git status --porcelain)" ]; then
-          echo "changed=false" >> "$GITHUB_OUTPUT"
-        else
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-          git status --short
-        fi
-      shell: bash
-
-    - name: Configure git author
-      if: steps.changes.outputs.changed == 'true'
-      env:
-        APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
-        GH_TOKEN: ${{ steps.app-token.outputs.token }}
-      run: |
-        bot_user="${APP_SLUG}[bot]"
-        bot_id="$(gh api "/users/${bot_user}" --jq .id)"
-
-        git config user.name "$bot_user"
-        git config user.email "${bot_id}+${bot_user}@users.noreply.github.com"
-      shell: bash
-
-    - name: Commit and push changes
-      if: steps.changes.outputs.changed == 'true'
-      env:
+    - name: Commit Storybook updates
+      id: commit
+      uses: 24dlong/github-actions-library/actions/javascript/commit@v3
+      with:
+        GITHUB_APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         BRANCH: ${{ inputs.AUTOMATION_BRANCH }}
-      run: |
-        git switch -c "$BRANCH"
-        git add --all
-        git commit -m "chore: upgrade storybook"
-
-        remote_sha="$(git ls-remote --heads origin "$BRANCH" | awk '{print $1}')"
-
-        if [ -n "$remote_sha" ]; then
-          git push --force-with-lease="refs/heads/${BRANCH}:${remote_sha}" origin "HEAD:${BRANCH}"
-        else
-          git push origin "HEAD:${BRANCH}"
-        fi
-      shell: bash
+        COMMIT_MESSAGE: "chore: upgrade storybook"
 
     - name: Create or update pull request
-      if: steps.changes.outputs.changed == 'true'
+      if: steps.commit.outputs.changed == 'true'
       env:
         BASE_BRANCH: ${{ inputs.BASE_BRANCH }}
         BRANCH: ${{ inputs.AUTOMATION_BRANCH }}
         GH_TOKEN: ${{ steps.app-token.outputs.token }}
         STORYBOOK_TARGET: ${{ steps.target.outputs.target }}
         UPGRADE_EXIT_CODE: ${{ steps.upgrade.outputs.exit_code }}
+        MIGRATION_NOTES_FILE: ${{ runner.temp }}/storybook-manual-migrations.txt
       run: |
         title="chore: upgrade Storybook"
         pr_number="$(gh pr list --head "$BRANCH" --base "$BASE_BRANCH" --state open --json number --jq '.[0].number')"
@@ -179,6 +182,21 @@ runs:
         Storybook upgrade exit code: \`${UPGRADE_EXIT_CODE}\`
         EOF
 
+        if [ -s "$MIGRATION_NOTES_FILE" ]; then
+          cat >> "$body" <<'EOF'
+
+        ## Manual migration required
+
+        Storybook could not apply the following automigration. Complete these steps before merging:
+
+        ```text
+        EOF
+          cat "$MIGRATION_NOTES_FILE" >> "$body"
+          cat >> "$body" <<'EOF'
+        ```
+        EOF
+        fi
+
         if [ -n "$pr_number" ]; then
           gh pr edit "$pr_number" --title "$title" --body-file "$body"
         else
@@ -190,7 +208,7 @@ runs:
         fi
       shell: bash
 
-    - name: Fail if upgrade command failed
-      if: steps.upgrade.outputs.exit_code != '0'
+    - name: Fail if upgrade command failed unexpectedly
+      if: steps.upgrade.outputs.exit_code != '0' && steps.upgrade.outputs.manual_migrations_required != 'true'
       run: exit 1
       shell: bash
