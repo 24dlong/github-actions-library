@@ -1,3 +1,8 @@
+## 3.7.0 (2026-07-24)
+
+
+- feat: add composite action for upgrading expo dependencies (#42)
+
 ## 3.6.1 (2026-07-24)
 
 
