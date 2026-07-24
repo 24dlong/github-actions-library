@@ -1,3 +1,43 @@
+## 3.7.0 (2026-07-24)
+
+
+- feat: add composite action for upgrading expo dependencies (#42)
+
+## 3.6.1 (2026-07-24)
+
+
+- fix: fix broken install (#41)
+
+## 3.6.0 (2026-07-19)
+
+
+- feat: add storybook upgrade action (#40)
+
+## 3.5.0 (2026-07-17)
+
+
+- feat: add storybook doctor checks (#39)
+
+## 3.4.0 (2026-07-13)
+
+
+- feat: add a check to build ios storybook (#38)
+
+## 3.3.0 (2026-07-08)
+
+
+- feat(visual-tests): autoAcceptChanges on the main branch (#37)
+
+## 3.2.0 (2026-07-07)
+
+
+- feat(expo): adds a quality gate for expo projects (#36)
+
+## 3.1.0 (2026-07-07)
+
+
+- feat(visual-tests): support private registry auth (#35)
+
 ## 3.0.5 (2026-05-20)
 
 

@@ -1,5 +1,5 @@
-name: Quality Gate
-description: To ensure code quality, runs lint, test, and build steps for a javascript repository managed with pnpm.
+name: Setup JavaScript
+description: Sets up a pnpm JavaScript project and installs dependencies from AWS CodeArtifact.
 
 inputs:
   AWS_ACCOUNT_ID:
@@ -24,27 +24,31 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+    - name: Setup Environment
+      run: make setup-env
+      shell: bash
 
-    - name: Setup JavaScript
-      uses: 24dlong/github-actions-library/actions/javascript/setup@v3
+    # Without an explicit version, uses packageManager version from package.json.
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+
+    - name: Setup Node
+      uses: actions/setup-node@v4
       with:
-        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
-        AWS_REGION: ${{ inputs.AWS_REGION }}
-        AWS_ROLE_TO_ASSUME: ${{ inputs.AWS_ROLE_TO_ASSUME }}
+        node-version-file: .nvmrc
+        cache: pnpm
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: ${{ inputs.AWS_REGION }}
+        role-to-assume: ${{ inputs.AWS_ROLE_TO_ASSUME }}
+
+    - name: Install Dependencies
+      env:
         AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
+        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
         AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
         REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
-
-    - name: Lint
-      run: make lint
-      shell: bash
-
-    - name: Test
-      run: make test
-      shell: bash
-
-    - name: Build
-      run: make build
+      run: make install
       shell: bash

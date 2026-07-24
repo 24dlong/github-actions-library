@@ -21,6 +21,16 @@ Requires a Makefile with the following commands implemented:
 uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v2
 ```
 
+#### Expo Quality Gate
+Runs the base JavaScript quality gate, then checks Expo package compatibility and runs
+Expo Doctor.
+
+Requires the same Makefile commands and AWS inputs as the base Quality Gate action.
+
+```yaml
+uses: 24dlong/github-actions-library/actions/javascript/expo/quality-gate@v3
+```
+
 ### Publish
 Executes the quality gate action and executes a publish command if checks pass.
 ```yaml

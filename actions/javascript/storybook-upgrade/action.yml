@@ -1,0 +1,214 @@
+name: Storybook Upgrade
+description: Upgrades Storybook and opens or updates a pull request with resulting changes.
+
+inputs:
+  GITHUB_APP_CLIENT_ID:
+    description: GitHub App client ID used to create the upgrade pull request.
+    required: true
+  GITHUB_APP_PRIVATE_KEY:
+    description: GitHub App private key used to create the upgrade pull request.
+    required: true
+  AWS_ACCOUNT_ID:
+    description: AWS Account ID hosting CodeArtifact.
+    required: true
+  AWS_REGION:
+    description: AWS region hosting CodeArtifact.
+    required: true
+  AWS_ROLE_TO_ASSUME:
+    description: AWS role to assume for CodeArtifact repository access.
+    required: true
+  AWS_CODE_ARTIFACT_DOMAIN:
+    description: AWS CodeArtifact domain.
+    required: true
+  AWS_CODE_ARTIFACT_REPOSITORY:
+    description: AWS CodeArtifact repository.
+    required: true
+  REGISTRY_NAMESPACE:
+    description: Namespace to use for registry authentication.
+    required: true
+  STORYBOOK_TARGET:
+    description: Storybook dist tag or version to upgrade to.
+    required: false
+    default: latest
+  AUTOMATION_BRANCH:
+    description: Branch used for Storybook upgrade changes.
+    required: false
+    default: automation/storybook-upgrade
+  BASE_BRANCH:
+    description: Base branch for the Storybook upgrade pull request.
+    required: false
+    default: main
+
+outputs:
+  changed:
+    description: Whether the Storybook upgrade changed repository files.
+    value: ${{ steps.commit.outputs.changed }}
+  upgrade-exit-code:
+    description: Exit code returned by the Storybook upgrade command.
+    value: ${{ steps.upgrade.outputs.exit_code }}
+  manual-migrations-required:
+    description: Whether Storybook reported manual migration instructions.
+    value: ${{ steps.upgrade.outputs.manual_migrations_required }}
+
+runs:
+  using: composite
+  steps:
+    - name: Create GitHub App token
+      id: app-token
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.GITHUB_APP_CLIENT_ID }}
+        private-key: ${{ inputs.GITHUB_APP_PRIVATE_KEY }}
+        permission-contents: write
+        permission-pull-requests: write
+
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ steps.app-token.outputs.token }}
+
+    - name: Setup JavaScript
+      uses: 24dlong/github-actions-library/actions/javascript/setup@v3
+      with:
+        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
+        AWS_REGION: ${{ inputs.AWS_REGION }}
+        AWS_ROLE_TO_ASSUME: ${{ inputs.AWS_ROLE_TO_ASSUME }}
+        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
+        AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
+        REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
+
+    - name: Resolve upgrade target
+      id: target
+      env:
+        INPUT_TARGET: ${{ inputs.STORYBOOK_TARGET }}
+      run: |
+        target="${INPUT_TARGET:-latest}"
+
+        if [[ ! "$target" =~ ^(latest|next|[0-9]+(\.[0-9]+){0,2}(-[0-9A-Za-z.-]+)?)$ ]]; then
+          echo "Invalid Storybook target: $target" >&2
+          exit 1
+        fi
+
+        echo "target=$target" >> "$GITHUB_OUTPUT"
+      shell: bash
+
+    - name: Run Storybook upgrade
+      id: upgrade
+      env:
+        STORYBOOK_TARGET: ${{ steps.target.outputs.target }}
+        CI: false # to avoid pnpm frozen lockfile
+      run: |
+        set +e
+        pnpm dlx "storybook@${STORYBOOK_TARGET}" upgrade \
+          --package-manager pnpm \
+          --yes \
+          --disable-telemetry \
+          --loglevel info \
+          --logfile debug-storybook.log
+        exit_code=$?
+        set -e
+
+        migration_notes_file="${RUNNER_TEMP}/storybook-manual-migrations.txt"
+        rm -f "$migration_notes_file"
+
+        if [ "$exit_code" -ne 0 ] && [ -f debug-storybook.log ]; then
+          echo "::group::Storybook debug log"
+          cat debug-storybook.log
+          echo "::endgroup::"
+        fi
+
+        if [ -f debug-storybook.log ]; then
+          awk '
+            /automigration couldn.t make the changes but here are instructions for doing them yourself:/ {
+              capture = 1
+            }
+            capture && /^[[:space:]]+at / {
+              capture = 0
+              next
+            }
+            capture {
+              sub(/^[[:space:]]*\[[^]]+\] \[[^]]+\][[:space:]]*/, "")
+              print
+            }
+          ' debug-storybook.log > "$migration_notes_file"
+        fi
+
+        rm -f debug-storybook.log
+        echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+
+        if [ -s "$migration_notes_file" ]; then
+          echo "manual_migrations_required=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "manual_migrations_required=false" >> "$GITHUB_OUTPUT"
+        fi
+
+        if [ "$exit_code" -ne 0 ]; then
+          echo "::warning::Storybook upgrade exited with code $exit_code"
+        fi
+      shell: bash
+
+    - name: Commit Storybook updates
+      id: commit
+      uses: 24dlong/github-actions-library/actions/javascript/commit@v3
+      with:
+        GITHUB_APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        BRANCH: ${{ inputs.AUTOMATION_BRANCH }}
+        COMMIT_MESSAGE: "chore: upgrade storybook"
+
+    - name: Create or update pull request
+      if: steps.commit.outputs.changed == 'true'
+      env:
+        BASE_BRANCH: ${{ inputs.BASE_BRANCH }}
+        BRANCH: ${{ inputs.AUTOMATION_BRANCH }}
+        GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        STORYBOOK_TARGET: ${{ steps.target.outputs.target }}
+        UPGRADE_EXIT_CODE: ${{ steps.upgrade.outputs.exit_code }}
+        MIGRATION_NOTES_FILE: ${{ runner.temp }}/storybook-manual-migrations.txt
+      run: |
+        title="chore: upgrade Storybook"
+        pr_number="$(gh pr list --head "$BRANCH" --base "$BASE_BRANCH" --state open --json number --jq '.[0].number')"
+        body="$(mktemp)"
+
+        cat > "$body" <<EOF
+        ## Summary
+
+        - Ran \`pnpm dlx storybook@${STORYBOOK_TARGET} upgrade --package-manager pnpm --yes --disable-telemetry\`
+        - Let Storybook automigrations update repo files
+        - Existing CI and visual tests own validation
+
+        ## Notes
+
+        Storybook upgrade exit code: \`${UPGRADE_EXIT_CODE}\`
+        EOF
+
+        if [ -s "$MIGRATION_NOTES_FILE" ]; then
+          cat >> "$body" <<'EOF'
+
+        ## Manual migration required
+
+        Storybook could not apply the following automigration. Complete these steps before merging:
+
+        ```text
+        EOF
+          cat "$MIGRATION_NOTES_FILE" >> "$body"
+          cat >> "$body" <<'EOF'
+        ```
+        EOF
+        fi
+
+        if [ -n "$pr_number" ]; then
+          gh pr edit "$pr_number" --title "$title" --body-file "$body"
+        else
+          gh pr create \
+            --base "$BASE_BRANCH" \
+            --head "$BRANCH" \
+            --title "$title" \
+            --body-file "$body"
+        fi
+      shell: bash
+
+    - name: Fail if upgrade command failed unexpectedly
+      if: steps.upgrade.outputs.exit_code != '0' && steps.upgrade.outputs.manual_migrations_required != 'true'
+      run: exit 1
+      shell: bash
