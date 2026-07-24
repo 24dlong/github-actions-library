@@ -1,0 +1,67 @@
+name: Commit changes
+description: Commits all workspace changes and pushes them to a branch as a GitHub App bot.
+
+inputs:
+  GITHUB_APP_SLUG:
+    description: GitHub App slug used for commit attribution.
+    required: true
+  GITHUB_TOKEN:
+    description: GitHub App installation token used for author lookup and push authentication.
+    required: true
+  BRANCH:
+    description: Branch that receives the commit.
+    required: true
+  COMMIT_MESSAGE:
+    description: Commit message to use when changes exist.
+    required: true
+
+outputs:
+  changed:
+    description: Whether repository files changed and were pushed.
+    value: ${{ steps.changes.outputs.changed }}
+
+runs:
+  using: composite
+  steps:
+    - name: Detect changes
+      id: changes
+      run: |
+        if [ -z "$(git status --porcelain)" ]; then
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          git status --short
+        fi
+      shell: bash
+
+    - name: Configure git author
+      if: steps.changes.outputs.changed == 'true'
+      env:
+        APP_SLUG: ${{ inputs.GITHUB_APP_SLUG }}
+        GH_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+      run: |
+        bot_user="${APP_SLUG}[bot]"
+        bot_id="$(gh api "/users/${bot_user}" --jq .id)"
+
+        git config user.name "$bot_user"
+        git config user.email "${bot_id}+${bot_user}@users.noreply.github.com"
+      shell: bash
+
+    - name: Commit and push changes
+      if: steps.changes.outputs.changed == 'true'
+      env:
+        BRANCH: ${{ inputs.BRANCH }}
+        COMMIT_MESSAGE: ${{ inputs.COMMIT_MESSAGE }}
+      run: |
+        git switch -C "$BRANCH"
+        git add --all
+        git commit -m "$COMMIT_MESSAGE"
+
+        remote_sha="$(git ls-remote --heads origin "$BRANCH" | awk '{print $1}')"
+
+        if [ -n "$remote_sha" ]; then
+          git push --force-with-lease="refs/heads/${BRANCH}:${remote_sha}" origin "HEAD:${BRANCH}"
+        else
+          git push origin "HEAD:${BRANCH}"
+        fi
+      shell: bash
