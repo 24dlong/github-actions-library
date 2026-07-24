@@ -1,0 +1,71 @@
+name: Upgrade Expo dependencies
+description: Upgrades Expo dependencies based on the Expo SDK version in the target branch
+
+inputs:
+  GITHUB_APP_CLIENT_ID:
+    description: GitHub App client ID used to commit dependency updates.
+    required: true
+  GITHUB_APP_PRIVATE_KEY:
+    description: GitHub App private key used to commit dependency updates.
+    required: true
+  AWS_ACCOUNT_ID:
+    description: AWS Account ID hosting CodeArtifact.
+    required: true
+  AWS_REGION:
+    description: AWS region hosting CodeArtifact.
+    required: true
+  AWS_ROLE_TO_ASSUME:
+    description: AWS role to assume for CodeArtifact repository access.
+    required: true
+  AWS_CODE_ARTIFACT_DOMAIN:
+    description: AWS CodeArtifact domain.
+    required: true
+  AWS_CODE_ARTIFACT_REPOSITORY:
+    description: AWS CodeArtifact repository.
+    required: true
+  REGISTRY_NAMESPACE:
+    description: Namespace to use for registry authentication.
+    required: true
+
+outputs:
+  changed:
+    description: Whether Expo dependency updates changed and were pushed to the branch.
+    value: ${{ steps.commit.outputs.changed }}
+
+runs:
+  using: composite
+  steps:
+    - name: Create GitHub App token
+      id: app-token
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.GITHUB_APP_CLIENT_ID }}
+        private-key: ${{ inputs.GITHUB_APP_PRIVATE_KEY }}
+        permission-contents: write
+
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+        token: ${{ steps.app-token.outputs.token }}
+
+    - name: Setup JavaScript
+      uses: 24dlong/github-actions-library/actions/javascript/setup@v3
+      with:
+        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
+        AWS_REGION: ${{ inputs.AWS_REGION }}
+        AWS_ROLE_TO_ASSUME: ${{ inputs.AWS_ROLE_TO_ASSUME }}
+        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
+        AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
+        REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
+
+    - run: pnpm exec expo install --fix
+      shell: bash
+
+    - name: Commit Expo dependency updates
+      id: commit
+      uses: 24dlong/github-actions-library/actions/javascript/commit@v3
+      with:
+        GITHUB_APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        BRANCH: ${{ github.head_ref || github.ref_name }}
+        COMMIT_MESSAGE: "chore: upgrade Expo dependencies"
