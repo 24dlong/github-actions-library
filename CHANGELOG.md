@@ -1,3 +1,9 @@
+## 3.7.2 (2026-07-25)
+
+
+- chore(deps): update actions/checkout action to v7 (#44)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+
 ## 3.7.1 (2026-07-25)
 
 
