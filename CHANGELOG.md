@@ -1,3 +1,12 @@
+## 3.7.1 (2026-07-25)
+
+
+- chore(deps): update commitizen-tools/commitizen-action action to v0.27.1 (#43)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+- Add renovate.json (#34)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+Co-authored-by: Daniel Long <24.daniel.long@gmail.com>
+
 ## 3.7.0 (2026-07-24)
 
 
