@@ -25,7 +25,7 @@ runs:
   using: composite
   steps:
     - name: Checkout Code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Setup JavaScript
       uses: 24dlong/github-actions-library/actions/javascript/setup@v3

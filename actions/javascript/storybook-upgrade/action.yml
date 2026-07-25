@@ -63,7 +63,7 @@ runs:
         permission-pull-requests: write
 
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         token: ${{ steps.app-token.outputs.token }}
 
