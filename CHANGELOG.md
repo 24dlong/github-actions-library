@@ -1,3 +1,9 @@
+## 3.7.3 (2026-07-27)
+
+
+- chore(deps): update actions/setup-node action to v7 (#46)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+
 ## 3.7.2 (2026-07-25)
 
 
