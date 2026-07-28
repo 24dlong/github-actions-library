@@ -1,3 +1,9 @@
+## 3.7.5 (2026-07-28)
+
+
+- chore(deps): update aws-actions/configure-aws-credentials action to v6 (#49)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+
 ## 3.7.4 (2026-07-27)
 
 
