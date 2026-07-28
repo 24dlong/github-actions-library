@@ -1,3 +1,12 @@
+## 3.9.0 (2026-07-28)
+
+
+- fix: correct merge workflow github token (#57)
+- fix: rollback merge change until publish action changes are published (#55)
+- feat: add generic quality gate action (#53)
+- feat: further centralize publish action (#52)
+- ci: update merge workflow to use shared action (#51)
+
 ## 3.8.0 (2026-07-28)
 
 
