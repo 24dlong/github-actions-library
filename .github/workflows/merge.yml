@@ -7,10 +7,16 @@ on:
 
 jobs:
   bump-version:
+    if: ${{ !startsWith(github.event.head_commit.message, 'bump:') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
       - name: Publish
         uses: 24dlong/github-actions-library/actions/publish@v3
         with:
