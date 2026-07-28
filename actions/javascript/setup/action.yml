@@ -39,7 +39,7 @@ runs:
         cache: pnpm
 
     - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v6
       with:
         aws-region: ${{ inputs.AWS_REGION }}
         role-to-assume: ${{ inputs.AWS_ROLE_TO_ASSUME }}
