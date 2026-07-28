@@ -15,11 +15,10 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
-      - uses: commitizen-tools/commitizen-action@0.27.1
+      - name: Publish
+        uses: 24dlong/github-actions-library/actions/publish@v3
         with:
           # required to bypass branch protection in user-owned repositories
-          github_token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
-      - name: Tag Major Version
-        run: ./scripts/tag-major-version.sh
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
