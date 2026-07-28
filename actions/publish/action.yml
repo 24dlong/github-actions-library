@@ -1,0 +1,25 @@
+name: Publish
+description: >-
+  Bumps the project version with commitizen and updates the major version tag
+  pointer (e.g. v1, v2) to point at the latest release. Intended to run on
+  push to main, after checking out the repository with full history.
+
+inputs:
+  GITHUB_TOKEN:
+    description: >-
+      Token used to push the version bump commit and tags. Must be able to
+      bypass branch protection on the target branch (e.g. a personal access
+      token or GitHub App installation token).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Bump Version
+      uses: commitizen-tools/commitizen-action@0.27.1
+      with:
+        github_token: ${{ inputs.GITHUB_TOKEN }}
+
+    - name: Tag Major Version
+      run: ${{ github.action_path }}/tag-major-version.sh
+      shell: bash

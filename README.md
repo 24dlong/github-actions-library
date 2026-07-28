@@ -18,7 +18,7 @@ Requires a Makefile with the following commands implemented:
 - `make build`: Builds the project.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v2
+uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v3
 ```
 
 #### Expo Quality Gate
@@ -34,7 +34,7 @@ uses: 24dlong/github-actions-library/actions/javascript/expo/quality-gate@v3
 ### Publish
 Executes the quality gate action and executes a publish command if checks pass.
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/publish@v2
+uses: 24dlong/github-actions-library/actions/javascript/publish@v3
 with:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -46,7 +46,7 @@ create a GitHub release and version tag.
 ### Library Publish
 Runs quality checks and publishes a JavaScript library to AWS CodeArtifact.
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/library/publish@v2
+uses: 24dlong/github-actions-library/actions/javascript/library/publish@v3
 with:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   AWS_ACCOUNT_ID: "your-account-id"
@@ -59,6 +59,22 @@ with:
 In addition to the Makefile requirements for the Quality Gate action, a `make publish`
 command must also be implemented. In the case of the `library/publish` action, this
 command should also publish the library to CodeArtifact. The action handles authentication.
+
+### Generic Actions
+#### Publish
+Bumps the project version with commitizen and updates the major version tag pointer
+(e.g. `v1`, `v2`) to point at the latest release. Intended to run on push to `main`,
+after checking out the repository with full history (`fetch-depth: 0`). Not specific
+to any language or technology.
+
+```yaml
+uses: 24dlong/github-actions-library/actions/publish@v3
+with:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+The token must be able to bypass branch protection on the target branch (e.g. a
+personal access token or GitHub App installation token).
 
 ## Contributing
 
