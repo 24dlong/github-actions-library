@@ -1,8 +1,9 @@
 name: Publish
 description: >-
-  Bumps the project version with commitizen and updates the major version tag
-  pointer (e.g. v1, v2) to point at the latest release. Intended to run on
-  push to main, after checking out the repository with full history.
+  Checks out the repository with full history, bumps the project version with
+  commitizen, and updates the major version tag pointer (e.g. v1, v2) to point
+  at the latest release. Intended to run on push to main. Skips all steps when
+  triggered by its own version-bump commit, to avoid retriggering itself.
 
 inputs:
   GITHUB_TOKEN:
@@ -15,11 +16,20 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Checkout Code
+      if: ${{ !startsWith(github.event.head_commit.message, 'bump:') }}
+      uses: actions/checkout@v7
+      with:
+        token: ${{ inputs.GITHUB_TOKEN }}
+        fetch-depth: 0
+
     - name: Bump Version
+      if: ${{ !startsWith(github.event.head_commit.message, 'bump:') }}
       uses: commitizen-tools/commitizen-action@0.27.1
       with:
         github_token: ${{ inputs.GITHUB_TOKEN }}
 
     - name: Tag Major Version
+      if: ${{ !startsWith(github.event.head_commit.message, 'bump:') }}
       run: ${{ github.action_path }}/tag-major-version.sh
       shell: bash
