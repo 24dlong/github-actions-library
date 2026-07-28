@@ -61,11 +61,29 @@ command must also be implemented. In the case of the `library/publish` action, t
 command should also publish the library to CodeArtifact. The action handles authentication.
 
 ### Generic Actions
+#### Quality Gate
+Checks out the repository and runs lint checks. Not specific to any language or technology.
+
+```yaml
+uses: 24dlong/github-actions-library/actions/quality-gate@v3
+```
+
+Requires a Makefile with the following commands implemented:
+
+- `make setup-lint`: Installs any linting tools required (e.g. pre-commit, checkov) and any
+  hooks needed to run them.
+- `make lint`: Runs all lint/static checks (e.g. `pre-commit run --all-files`).
+
+The calling workflow is responsible for installing any language or tool runtime needed by
+`make lint` (e.g. `actions/setup-python`, `hashicorp/setup-terraform`) before calling this
+action.
+
 #### Publish
-Bumps the project version with commitizen and updates the major version tag pointer
-(e.g. `v1`, `v2`) to point at the latest release. Intended to run on push to `main`,
-after checking out the repository with full history (`fetch-depth: 0`). Not specific
-to any language or technology.
+Checks out the repository with full history (`fetch-depth: 0`), bumps the project
+version with commitizen, and updates the major version tag pointer (e.g. `v1`, `v2`)
+to point at the latest release. Intended to run on push to `main`. Not specific to any
+language or technology. All steps are skipped when triggered by its own version-bump
+commit (any commit message starting with `bump:`), to avoid retriggering itself.
 
 ```yaml
 uses: 24dlong/github-actions-library/actions/publish@v3

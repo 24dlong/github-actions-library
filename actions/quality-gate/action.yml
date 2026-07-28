@@ -1,0 +1,20 @@
+name: Quality Gate
+description: >-
+  Ensures code quality by checking out the repository and running lint checks.
+  Not specific to any language or technology; the calling workflow is
+  responsible for installing any language/tool runtime needed by `make lint`
+  (e.g. Python, Terraform, Node).
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout Code
+      uses: actions/checkout@v7
+
+    - name: Setup Linter
+      run: make setup-lint
+      shell: bash
+
+    - name: Lint
+      run: make lint
+      shell: bash
