@@ -1,3 +1,8 @@
+## 3.8.0 (2026-07-28)
+
+
+- feat: add a generic publish action (#50)
+
 ## 3.7.5 (2026-07-28)
 
 
