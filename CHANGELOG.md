@@ -1,3 +1,11 @@
+## 3.9.1 (2026-07-29)
+
+
+- chore(deps): update pnpm/action-setup action to v6 (#58)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+- ci: update pull_request workflow to use shared action (#54)
+- ci: remove redundant steps from merge workflow (#56)
+
 ## 3.9.0 (2026-07-28)
 
 
