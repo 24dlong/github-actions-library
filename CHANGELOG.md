@@ -1,3 +1,10 @@
+## 3.9.2 (2026-07-29)
+
+
+- chore(deps): update actions/setup-python action to v7 (#48)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+Co-authored-by: Daniel Long <24.daniel.long@gmail.com>
+
 ## 3.9.1 (2026-07-29)
 
 
