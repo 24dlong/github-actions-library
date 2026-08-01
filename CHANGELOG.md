@@ -1,3 +1,9 @@
+## 3.9.4 (2026-08-01)
+
+
+- chore(deps): update pre-commit hook pre-commit/pre-commit-hooks to v6 (#60)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+
 ## 3.9.3 (2026-07-31)
 
 
