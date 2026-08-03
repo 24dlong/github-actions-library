@@ -1,3 +1,8 @@
+## 3.10.0 (2026-08-03)
+
+
+- feat: support minimumReleaseAge for storybook-upgrade (#61)
+
 ## 3.9.4 (2026-08-01)
 
 
