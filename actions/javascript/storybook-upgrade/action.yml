@@ -89,6 +89,42 @@ runs:
           exit 1
         fi
 
+        # Dist tags can point at a version too fresh for the repo's pnpm
+        # minimumReleaseAge policy, which blocks install entirely. When a
+        # dist tag is requested, resolve it to the newest version that has
+        # already cleared that age window instead of using the tag as-is.
+        if [[ "$target" == "latest" || "$target" == "next" ]]; then
+          min_release_age_minutes="$(grep -E '^minimumReleaseAge:' pnpm-workspace.yaml 2>/dev/null | grep -oE '[0-9]+' | head -n1)"
+          min_release_age_minutes="${min_release_age_minutes:-0}"
+
+          if [ "$min_release_age_minutes" -gt 0 ]; then
+            include_prereleases="false"
+            [ "$target" = "next" ] && include_prereleases="true"
+
+            resolved="$(pnpm view storybook time --json 2>/dev/null | node -e '
+              const data = JSON.parse(require("fs").readFileSync(0, "utf8"));
+              const minutes = Number(process.argv[1]);
+              const includePrereleases = process.argv[2] === "true";
+              const cutoff = Date.now() - minutes * 60 * 1000;
+
+              const versions = Object.keys(data)
+                .filter((v) => v !== "created" && v !== "modified")
+                .filter((v) => includePrereleases || !v.includes("-"))
+                .filter((v) => new Date(data[v]).getTime() <= cutoff)
+                .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+
+              process.stdout.write(versions[0] ?? "");
+            ' "$min_release_age_minutes" "$include_prereleases")"
+
+            if [ -n "$resolved" ]; then
+              echo "Resolved $target -> $resolved (minimumReleaseAge: ${min_release_age_minutes}m)"
+              target="$resolved"
+            else
+              echo "::warning::No Storybook version older than minimumReleaseAge (${min_release_age_minutes}m) found; falling back to $target"
+            fi
+          fi
+        fi
+
         echo "target=$target" >> "$GITHUB_OUTPUT"
       shell: bash
 
