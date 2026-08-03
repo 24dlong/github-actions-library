@@ -1,3 +1,22 @@
+## 3.9.4 (2026-08-01)
+
+
+- chore(deps): update pre-commit hook pre-commit/pre-commit-hooks to v6 (#60)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+
+## 3.9.3 (2026-07-31)
+
+
+- chore(deps): update pre-commit hook commitizen-tools/commitizen to v4.16.5 (#59)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+
+## 3.9.2 (2026-07-29)
+
+
+- chore(deps): update actions/setup-python action to v7 (#48)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+Co-authored-by: Daniel Long <24.daniel.long@gmail.com>
+
 ## 3.9.1 (2026-07-29)
 
 
