@@ -1,4 +1,4 @@
-name: Terraform Apply
+name: Apply Changes
 description: >-
   Resolves the pull request merged into this commit, downloads the Terraform
   plan artifact produced by that PR's plan workflow run, and applies it
