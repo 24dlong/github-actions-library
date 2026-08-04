@@ -1,0 +1,77 @@
+name: Terraform Plan
+description: >-
+  Runs terraform plan for a working directory, posts the rendered plan as a
+  pull request comment, and uploads the plan as a build artifact so a later
+  workflow run can apply the exact same plan after merge.
+
+inputs:
+  working-directory:
+    description: Path to the Terraform root module to plan (e.g. "production").
+    required: true
+  aws-role-to-assume:
+    description: ARN of the AWS IAM role to assume for the plan (read-only credentials).
+    required: true
+  aws-region:
+    description: AWS region to configure credentials for.
+    required: false
+    default: us-east-2
+  github-token:
+    description: Token used to comment on the pull request. Typically secrets.GITHUB_TOKEN.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+
+    - name: Configure AWS credentials (plan role)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.aws-role-to-assume }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Terraform init
+      shell: bash
+      run: terraform -chdir=${{ inputs.working-directory }} init -input=false
+
+    - name: Terraform plan
+      shell: bash
+      run: terraform -chdir=${{ inputs.working-directory }} plan -lock=false -out=tfplan
+
+    - name: Render plan text
+      shell: bash
+      run: terraform -chdir=${{ inputs.working-directory }} show -no-color tfplan > ${{ inputs.working-directory }}/tfplan.txt
+
+    - name: Comment plan on PR
+      uses: actions/github-script@v7
+      env:
+        PLAN_TEXT_PATH: ${{ inputs.working-directory }}/tfplan.txt
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+          const path = process.env.PLAN_TEXT_PATH;
+          const plan = fs.readFileSync(path, 'utf8');
+          const trimmed = plan.length > 60000 ? `${plan.slice(0, 60000)}\n\n...truncated...` : plan;
+          const body = [
+            `Terraform plan for \`${{ inputs.working-directory }}/\`:`,
+            '```diff',
+            trimmed,
+            '```'
+          ].join('\n');
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body,
+          });
+
+    - name: Upload plan artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: tfplan-pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+        path: |
+          ${{ inputs.working-directory }}/tfplan
+          ${{ inputs.working-directory }}/tfplan.txt
+        if-no-files-found: error
