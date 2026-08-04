@@ -1,3 +1,8 @@
+## 3.11.0 (2026-08-04)
+
+
+- feat: add terraform plan and apply actions (#63)
+
 ## 3.10.1 (2026-08-04)
 
 
