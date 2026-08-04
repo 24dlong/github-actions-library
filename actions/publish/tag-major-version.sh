@@ -3,7 +3,7 @@
 # Function to get the latest major version tag (e.g., 1.*, 2.*, etc.)
 get_latest_major_tag() {
   major=$1
-  latest_tag=$(git tag --list "${major}.*" | sort | tail -n 1)
+  latest_tag=$(git tag --list "${major}.*" --sort=-version:refname | head -n 1)
   echo "$latest_tag"
 }
 
@@ -21,13 +21,12 @@ update_major_tag() {
   fi
 }
 
-# Get the latest version tags (e.g., 1.2.1, 2.0.0, etc.)
-version_tags=$(git tag)
-major_tags=$(echo "$version_tags" | grep -E '^[0-9]')
+# Get version tags that start with a number, sorted newest first using version sort
+major_tags=$(git tag --list '[0-9]*' --sort=-version:refname)
 echo "Major version tags: $major_tags"
 
-# Sort the major version tags and get the latest one
-latest_major_version=$(echo "$major_tags" | sort | tail -n 1)
+# Pick the latest version tag
+latest_major_version=$(echo "$major_tags" | head -n 1)
 echo "Latest major version: $latest_major_version"
 
 if [ -n "$latest_major_version" ]; then
