@@ -1,0 +1,92 @@
+name: Terraform Apply
+description: >-
+  Resolves the pull request merged into this commit, downloads the Terraform
+  plan artifact produced by that PR's plan workflow run, and applies it
+  as-is so the applied change exactly matches what was reviewed.
+
+inputs:
+  working-directory:
+    description: Path to the Terraform root module to apply (e.g. "production").
+    required: true
+  aws-role-to-assume:
+    description: ARN of the AWS IAM role to assume for the apply (write credentials).
+    required: true
+  aws-region:
+    description: AWS region to configure credentials for.
+    required: false
+    default: us-east-2
+  github-token:
+    description: >-
+      Token used to query the PR/workflow run and download the plan artifact.
+      Typically secrets.GITHUB_TOKEN.
+    required: true
+  plan-workflow-file:
+    description: >-
+      File name of the workflow (in .github/workflows) whose successful
+      pull_request run produced the saved plan artifact (e.g. "pull-request.yml").
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+
+    - name: Configure AWS credentials (apply role)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.aws-role-to-assume }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Resolve merged PR and matching plan artifact
+      id: resolve
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PLAN_WORKFLOW_FILE: ${{ inputs.plan-workflow-file }}
+      run: |
+        set -euo pipefail
+
+        PR_JSON="$(gh api repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls --jq '.[0]')"
+        PR_NUMBER="$(echo "$PR_JSON" | jq -r '.number')"
+        PR_HEAD_SHA="$(echo "$PR_JSON" | jq -r '.head.sha')"
+
+        if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
+          echo "No PR found for commit ${GITHUB_SHA}." >&2
+          exit 1
+        fi
+
+        RUN_ID="$(gh api repos/${GITHUB_REPOSITORY}/actions/workflows/${PLAN_WORKFLOW_FILE}/runs \
+          -f event=pull_request -f status=completed --jq \
+          ".workflow_runs[] | select(.conclusion == \"success\" and .head_sha == \"${PR_HEAD_SHA}\") | .id" | head -n 1)"
+
+        if [ -z "$RUN_ID" ]; then
+          echo "No successful pull_request workflow run found for PR head sha ${PR_HEAD_SHA}." >&2
+          exit 1
+        fi
+
+        ARTIFACT_NAME="tfplan-pr-${PR_NUMBER}-${PR_HEAD_SHA}"
+
+        echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+        echo "pr_head_sha=${PR_HEAD_SHA}" >> "$GITHUB_OUTPUT"
+        echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
+        echo "artifact_name=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
+
+    - name: Download saved plan artifact
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        mkdir -p ${{ inputs.working-directory }}
+        gh run download "${{ steps.resolve.outputs.run_id }}" \
+          --name "${{ steps.resolve.outputs.artifact_name }}" \
+          --dir ${{ inputs.working-directory }}
+
+    - name: Terraform init
+      shell: bash
+      run: terraform -chdir=${{ inputs.working-directory }} init -input=false
+
+    - name: Terraform apply saved plan
+      shell: bash
+      run: terraform -chdir=${{ inputs.working-directory }} apply -input=false tfplan

@@ -94,6 +94,40 @@ with:
 The token must be able to bypass branch protection on the target branch (e.g. a
 personal access token or GitHub App installation token).
 
+### Actions for Terraform Repositories
+#### Terraform Plan
+Runs `terraform plan` for a given root module, comments the rendered plan on the pull
+request, and uploads the plan as a build artifact keyed by PR number and head SHA so a
+later apply run can reuse the exact same plan. Intended to run on `pull_request`.
+
+```yaml
+uses: 24dlong/github-actions-library/actions/terraform/plan@v3
+with:
+  working-directory: production
+  aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_PLAN }}
+  aws-region: us-east-2
+  github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+#### Terraform Apply
+Resolves the pull request merged into the triggering commit, finds the matching
+successful plan workflow run, downloads its saved plan artifact, and applies it as-is.
+Intended to run on push to `main`.
+
+```yaml
+uses: 24dlong/github-actions-library/actions/terraform/apply@v3
+with:
+  working-directory: production
+  aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_APPLY }}
+  aws-region: us-east-2
+  github-token: ${{ secrets.GITHUB_TOKEN }}
+  plan-workflow-file: pull-request.yml
+```
+
+`plan-workflow-file` must match the file name (under `.github/workflows/`) of the
+workflow that ran the Terraform Plan action for pull requests, so the apply action can
+look up its completed runs via the GitHub API.
+
 ## Contributing
 
 ### Initial Setup
