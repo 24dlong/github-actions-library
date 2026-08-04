@@ -1,3 +1,8 @@
+## 3.11.1 (2026-08-04)
+
+
+- fix: correct tag sort when bumping versions (#64)
+
 ## 3.11.0 (2026-08-04)
 
 
