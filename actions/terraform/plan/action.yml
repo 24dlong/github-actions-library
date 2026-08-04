@@ -1,4 +1,4 @@
-name: Terraform Plan
+name: Plan Changes
 description: >-
   Runs terraform plan for a working directory, posts the rendered plan as a
   pull request comment, and uploads the plan as a build artifact so a later
