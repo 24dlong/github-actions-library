@@ -68,7 +68,7 @@ runs:
           });
 
     - name: Upload plan artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: tfplan-pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
         path: |
