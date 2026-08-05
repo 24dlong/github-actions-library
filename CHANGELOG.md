@@ -1,3 +1,9 @@
+## 3.11.3 (2026-08-05)
+
+
+- chore(deps): update actions/github-script action to v9 (#66)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+
 ## 3.11.2 (2026-08-04)
 
 

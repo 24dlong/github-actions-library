@@ -44,7 +44,7 @@ runs:
       run: terraform -chdir=${{ inputs.working-directory }} show -no-color tfplan > ${{ inputs.working-directory }}/tfplan.txt
 
     - name: Comment plan on PR
-      uses: actions/github-script@v7
+      uses: actions/github-script@v9
       env:
         PLAN_TEXT_PATH: ${{ inputs.working-directory }}/tfplan.txt
       with:
