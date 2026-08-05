@@ -1,3 +1,10 @@
+## 3.11.4 (2026-08-05)
+
+
+- chore(deps): update actions/upload-artifact action to v7 (#67)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+Co-authored-by: Daniel Long <24.daniel.long@gmail.com>
+
 ## 3.11.3 (2026-08-05)
 
 
