@@ -33,7 +33,7 @@ runs:
       uses: hashicorp/setup-terraform@v3
 
     - name: Configure AWS credentials (apply role)
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v6
       with:
         role-to-assume: ${{ inputs.aws-role-to-assume }}
         aws-region: ${{ inputs.aws-region }}
