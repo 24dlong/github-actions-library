@@ -1,3 +1,9 @@
+## 3.11.5 (2026-08-06)
+
+
+- chore(deps): update hashicorp/setup-terraform action to v4 (#69)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+
 ## 3.11.4 (2026-08-05)
 
 
