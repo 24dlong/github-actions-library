@@ -1,3 +1,8 @@
+## 3.11.7 (2026-08-07)
+
+
+- fix: set EAS_NO_FROZEN_LOCKFILE in expo-upgrade (#71)
+
 ## 3.11.6 (2026-08-07)
 
 
