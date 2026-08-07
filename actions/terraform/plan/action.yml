@@ -26,7 +26,7 @@ runs:
       uses: hashicorp/setup-terraform@v4
 
     - name: Configure AWS credentials (plan role)
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v6
       with:
         role-to-assume: ${{ inputs.aws-role-to-assume }}
         aws-region: ${{ inputs.aws-region }}
