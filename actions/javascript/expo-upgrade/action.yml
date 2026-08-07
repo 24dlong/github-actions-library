@@ -48,8 +48,8 @@ runs:
       with:
         token: ${{ steps.app-token.outputs.token }}
 
-    - name: Setup JavaScript
-      uses: 24dlong/github-actions-library/actions/javascript/setup@v3
+    - name: Setup JavaScript Environment
+      uses: 24dlong/github-actions-library/actions/javascript/setup-no-install@v3
       with:
         AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
         AWS_REGION: ${{ inputs.AWS_REGION }}

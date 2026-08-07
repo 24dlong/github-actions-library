@@ -1,0 +1,45 @@
+name: Setup JavaScript Environment without Install
+description: Sets up a pnpm JavaScript project
+
+inputs:
+  AWS_ACCOUNT_ID:
+    description: AWS Account ID hosting CodeArtifact
+    required: true
+  AWS_REGION:
+    description: AWS region hosting CodeArtifact
+    required: true
+  AWS_ROLE_TO_ASSUME:
+    description: AWS role to assume for CodeArtifact repository access
+    required: true
+  AWS_CODE_ARTIFACT_DOMAIN:
+    description: AWS CodeArtifact domain
+    required: true
+  AWS_CODE_ARTIFACT_REPOSITORY:
+    description: AWS CodeArtifact repository
+    required: true
+  REGISTRY_NAMESPACE:
+    description: Namespace to use for registry authentication.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Environment
+      run: make setup-env
+      shell: bash
+
+    # Without an explicit version, uses packageManager version from package.json.
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v6
+
+    - name: Setup Node
+      uses: actions/setup-node@v7
+      with:
+        node-version-file: .nvmrc
+        cache: pnpm
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v6
+      with:
+        aws-region: ${{ inputs.AWS_REGION }}
+        role-to-assume: ${{ inputs.AWS_ROLE_TO_ASSUME }}
