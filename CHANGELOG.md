@@ -1,3 +1,8 @@
+## 3.11.6 (2026-08-07)
+
+
+- fix: skip frozen-lockfile install in expo-upgrade (#70)
+
 ## 3.11.5 (2026-08-06)
 
 
