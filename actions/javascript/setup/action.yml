@@ -1,4 +1,4 @@
-name: Setup JavaScript
+name: Setup JavaScript Environment
 description: Sets up a pnpm JavaScript project and installs dependencies from AWS CodeArtifact.
 
 inputs:
@@ -24,25 +24,15 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Setup Environment
-      run: make setup-env
-      shell: bash
-
-    # Without an explicit version, uses packageManager version from package.json.
-    - name: Setup pnpm
-      uses: pnpm/action-setup@v6
-
-    - name: Setup Node
-      uses: actions/setup-node@v7
+    - name: Setup JavaScript Environment
+      uses: 24dlong/github-actions-library/actions/javascript/setup-no-install@v3
       with:
-        node-version-file: .nvmrc
-        cache: pnpm
-
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v6
-      with:
-        aws-region: ${{ inputs.AWS_REGION }}
-        role-to-assume: ${{ inputs.AWS_ROLE_TO_ASSUME }}
+        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
+        AWS_REGION: ${{ inputs.AWS_REGION }}
+        AWS_ROLE_TO_ASSUME: ${{ inputs.AWS_ROLE_TO_ASSUME }}
+        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
+        AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
+        REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
 
     - name: Install Dependencies
       env:
