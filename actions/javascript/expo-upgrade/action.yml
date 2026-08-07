@@ -58,10 +58,22 @@ runs:
         AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
         REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
 
-    - run: pnpm exec expo install --fix
+    - name: Private Registry Authentication
+      env:
+        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
+        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
+        AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
+        REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
+      run: make registry-auth
       shell: bash
 
-    - name: Commit Expo dependency updates
+    - name: Upgrade Expo Dependencies
+      env:
+        EAS_NO_FROZEN_LOCKFILE: 1
+      run: pnpm exec expo install --fix
+      shell: bash
+
+    - name: Commit Expo Dependency Updates
       id: commit
       uses: 24dlong/github-actions-library/actions/javascript/commit@v3
       with:
