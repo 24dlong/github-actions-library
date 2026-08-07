@@ -38,7 +38,7 @@ runs:
         role-to-assume: ${{ inputs.aws-role-to-assume }}
         aws-region: ${{ inputs.aws-region }}
 
-    - name: Resolve merged PR and matching plan artifact
+    - name: Get Workflow Run ID
       id: resolve
       shell: bash
       env:
@@ -47,21 +47,23 @@ runs:
       run: |
         set -euo pipefail
 
-        PR_JSON="$(gh api repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls --jq '.[0]')"
-        PR_NUMBER="$(echo "$PR_JSON" | jq -r '.number')"
-        PR_HEAD_SHA="$(echo "$PR_JSON" | jq -r '.head.sha')"
+        PULLS_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls")"
 
-        if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
-          echo "No PR found for commit ${GITHUB_SHA}." >&2
+        PR_NUMBER="$(echo "$PULLS_JSON" | jq -r '.[0].number // empty')"
+        PR_HEAD_SHA="$(echo "$PULLS_JSON" | jq -r '.[0].head.sha // empty')"
+
+        if [ -z "$PR_NUMBER" ] || [ -z "$PR_HEAD_SHA" ]; then
+          echo "No pull request found associated with commit ${GITHUB_SHA}." >&2
           exit 1
         fi
 
-        RUN_ID="$(gh api repos/${GITHUB_REPOSITORY}/actions/workflows/${PLAN_WORKFLOW_FILE}/runs \
-          -f event=pull_request -f status=completed --jq \
-          ".workflow_runs[] | select(.conclusion == \"success\" and .head_sha == \"${PR_HEAD_SHA}\") | .id" | head -n 1)"
+        RUNS_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${PLAN_WORKFLOW_FILE}/runs" \
+          -f head_sha="${PR_HEAD_SHA}" -f status=success --method=GET)"
+
+        RUN_ID="$(echo "$RUNS_JSON" | jq -r '[.workflow_runs[]] | max_by(.run_attempt) | .id // empty')"
 
         if [ -z "$RUN_ID" ]; then
-          echo "No successful pull_request workflow run found for PR head sha ${PR_HEAD_SHA}." >&2
+          echo "No successful workflow run found for PR head sha ${PR_HEAD_SHA}." >&2
           exit 1
         fi
 
