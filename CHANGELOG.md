@@ -1,3 +1,8 @@
+## 3.11.9 (2026-08-07)
+
+
+- fix: fix artifact retrieval for terraform apply action (#72)
+
 ## 3.11.8 (2026-08-07)
 
 
