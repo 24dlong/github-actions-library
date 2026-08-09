@@ -91,8 +91,8 @@ runs:
 
     - name: Terraform init
       shell: bash
-      run: terraform -chdir=${{ inputs.working-directory }} init -input=false
+      run: mise exec -- terraform -chdir=${{ inputs.working-directory }} init -input=false
 
     - name: Terraform apply saved plan
       shell: bash
-      run: terraform -chdir=${{ inputs.working-directory }} apply -input=false tfplan
+      run: mise exec -- terraform -chdir=${{ inputs.working-directory }} apply -input=false tfplan

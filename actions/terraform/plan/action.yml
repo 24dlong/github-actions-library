@@ -37,15 +37,15 @@ runs:
 
     - name: Terraform init
       shell: bash
-      run: terraform -chdir=${{ inputs.working-directory }} init -input=false
+      run: mise exec -- terraform -chdir=${{ inputs.working-directory }} init -input=false
 
     - name: Terraform plan
       shell: bash
-      run: terraform -chdir=${{ inputs.working-directory }} plan -lock=false -out=tfplan
+      run: mise exec -- terraform -chdir=${{ inputs.working-directory }} plan -lock=false -out=tfplan
 
     - name: Render plan text
       shell: bash
-      run: terraform -chdir=${{ inputs.working-directory }} show -no-color tfplan > ${{ inputs.working-directory }}/tfplan.txt
+      run: mise exec -- terraform -chdir=${{ inputs.working-directory }} show -no-color tfplan > ${{ inputs.working-directory }}/tfplan.txt
 
     - name: Comment plan on PR
       uses: actions/github-script@v9
