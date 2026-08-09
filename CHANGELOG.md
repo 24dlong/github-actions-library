@@ -1,3 +1,10 @@
+## 4.0.0 (2026-08-09)
+
+
+- refactor!: migrate from setup-lint to more generic setup-env make command (#74)
+- BREAKING CHANGE: repository's making use of a setup-lint command will
+need to migrate to a setup-env command
+
 ## 3.11.9 (2026-08-07)
 
 
