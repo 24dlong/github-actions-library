@@ -11,10 +11,17 @@ runs:
     - name: Checkout Code
       uses: actions/checkout@v7
 
-    - name: Setup Linter
-      run: make setup-lint
+    - name: Setup Environment
+      run: make setup-env
       shell: bash
 
     - name: Lint
       run: make lint
+      shell: bash
+
+    - name: Test
+      run: |
+        if make -n test >/dev/null 2>&1; then
+          make test
+        fi
       shell: bash

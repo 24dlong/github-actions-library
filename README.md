@@ -70,9 +70,11 @@ uses: 24dlong/github-actions-library/actions/quality-gate@v3
 
 Requires a Makefile with the following commands implemented:
 
-- `make setup-lint`: Installs any linting tools required (e.g. pre-commit, checkov) and any
-  hooks needed to run them.
+- `make setup-env`: Installs any tools required (e.g. pre-commit, checkov) and any hooks needed to run them.
 - `make lint`: Runs all lint/static checks (e.g. `pre-commit run --all-files`).
+
+Optionally, will run the following if they exist:
+- `make test`: Runs any tests in the repository
 
 The calling workflow is responsible for installing any language or tool runtime needed by
 `make lint` (e.g. `actions/setup-python`, `hashicorp/setup-terraform`) before calling this
@@ -131,14 +133,14 @@ look up its completed runs via the GitHub API.
 ## Contributing
 
 ### Initial Setup
-Run `make setup-lint` after cloning the repository.
+Run `make setup-env` after cloning the repository.
 
 ### Requirements
 Contributions must conform to (conventional-commit)[http://conventionalcommits.org] standards.
 
 ### Helpful Commands
 
-`make setup-lint`: to install `pre-commit` and any neccesary plugins
+`make setup-env`: to install `pre-commit` and any neccesary plugins
 `make lint`: to run linting tools
 
 ### Technologies
@@ -148,4 +150,4 @@ checks on Pull Requests and publish new versions whenever key changes are pushed
 branch.
 - **Makefile** - To minimize necessary knowledge of the repository's tools, all necessary
 commands are implemented in a `Makefile`
-- **Pre-commit & commitizen** - Ensures code quality before commits are made. Requires a one-time install by running `make setup-lint`
+- **Pre-commit & commitizen** - Ensures code quality before commits are made. Requires a one-time install by running `make setup-env`
