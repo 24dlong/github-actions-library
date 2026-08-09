@@ -28,7 +28,7 @@ runs:
       # TODO: This technically creates a potential issue where an older version of the expo quality-gate
       # action could call a later version of the base quality-gate action. This follows the same tradeoff
       # as the publish actions to avoid duplicating the base quality-gate steps here.
-      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v3
+      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v4
       with:
         AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
         AWS_REGION: ${{ inputs.AWS_REGION }}
