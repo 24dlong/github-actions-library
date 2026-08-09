@@ -22,8 +22,8 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v4
+    - name: Setup Terraform via Mise
+      uses: jdx/mise-action@v4
 
     - name: Configure AWS credentials (plan role)
       uses: aws-actions/configure-aws-credentials@v6
