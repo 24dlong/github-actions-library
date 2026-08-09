@@ -22,8 +22,12 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v4
+    - name: Checkout Code
+      uses: actions/checkout@v7
+
+    - name: Setup Environment
+      shell: bash
+      run: make setup-env
 
     - name: Configure AWS credentials (plan role)
       uses: aws-actions/configure-aws-credentials@v6

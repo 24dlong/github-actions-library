@@ -1,8 +1,11 @@
-.PHONY: lint setup-lint
+.PHONY: lint setup-env setup-lint
 
 lint:
 	pre-commit run --all-files
 
-setup-lint:
+setup-env:
 	pip install pre-commit
 	pre-commit install
+
+setup-lint:
+	make setup-env
