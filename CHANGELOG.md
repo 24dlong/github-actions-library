@@ -1,3 +1,8 @@
+## 4.0.3 (2026-08-09)
+
+
+- docs: update action references to use v4 (#77)
+
 ## 4.0.2 (2026-08-09)
 
 
