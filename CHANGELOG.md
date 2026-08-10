@@ -1,3 +1,8 @@
+## 4.2.0 (2026-08-10)
+
+
+- feat: add a version output to publish action (#79)
+
 ## 4.1.0 (2026-08-10)
 
 
