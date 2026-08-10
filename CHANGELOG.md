@@ -1,3 +1,8 @@
+## 4.1.0 (2026-08-10)
+
+
+- feat: add an action to create a deployment PR (#78)
+
 ## 4.0.3 (2026-08-09)
 
 
