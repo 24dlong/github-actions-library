@@ -130,6 +130,28 @@ with:
 workflow that ran the Terraform Plan action for pull requests, so the apply action can
 look up its completed runs via the GitHub API.
 
+#### Terraform Deployment Pull Request
+Opens (or reuses) a pull request that bumps `environments/<environment>/deployed.json`
+to a given ref/sha, requesting a deployment of that environment. Idempotent: if the
+environment is already at that sha, no branch or pull request is created. Designed to
+be called both for a repository's lowest environment on every merge to `main`, and
+later by a promotion workflow for upper environments.
+
+```yaml
+uses: 24dlong/github-actions-library/actions/terraform/deployment-pr@v4
+with:
+  environment: production
+  ref: ${{ github.sha }}
+  github-token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+  base-branch: main
+```
+
+The calling repository must have an `environments/<environment>/` directory (the
+action creates `deployed.json` inside it if it doesn't exist yet). `github-token` must
+be able to bypass branch protection on `base-branch` (e.g. a personal access token or
+GitHub App installation token) so it can push the deployment branch and open the pull
+request.
+
 ## Contributing
 
 ### Initial Setup

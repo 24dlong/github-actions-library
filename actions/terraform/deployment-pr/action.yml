@@ -1,0 +1,122 @@
+name: Request Deployment
+description: >-
+  Opens (or reuses) a pull request that bumps environments/<environment>/deployed.json
+  to a given ref/sha, requesting a deployment of that environment. Idempotent: if the
+  environment is already at that sha, no branch/PR is created. Designed to be called
+  both for the lowest environment on every merge and by a promotion workflow
+  for upper environments.
+
+inputs:
+  environment:
+    description: Environment name, matching a directory under environments/ (e.g. "production").
+    required: true
+  ref:
+    description: Git ref or sha to request as the environment's desired state.
+    required: true
+  github-token:
+    description: >-
+      Token used to push the branch and open the pull request. Must be able to bypass
+      branch protection on base-branch (e.g. a personal access token or GitHub App
+      installation token).
+    required: true
+  base-branch:
+    description: Branch the deployment pull request should target.
+    required: false
+    default: main
+
+outputs:
+  pr-number:
+    description: Number of the created (or already-open) deployment pull request. Empty if no deploy was needed.
+    value: ${{ steps.pr.outputs.pr_number }}
+  pr-url:
+    description: URL of the created (or already-open) deployment pull request. Empty if no deploy was needed.
+    value: ${{ steps.pr.outputs.pr_url }}
+  branch-name:
+    description: Name of the deployment branch. Empty if no deploy was needed.
+    value: ${{ steps.pr.outputs.branch_name }}
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout Code
+      uses: actions/checkout@v7
+      with:
+        token: ${{ inputs.github-token }}
+        ref: ${{ inputs.base-branch }}
+        fetch-depth: 0
+
+    - name: Resolve ref and update deployed.json
+      id: pr
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        ENVIRONMENT: ${{ inputs.environment }}
+        REF: ${{ inputs.ref }}
+        BASE_BRANCH: ${{ inputs.base-branch }}
+      run: |
+        set -euo pipefail
+
+        SHA="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${REF}" --jq '.sha')"
+        SHORT_SHA="${SHA:0:7}"
+        DEPLOYED_FILE="environments/${ENVIRONMENT}/deployed.json"
+        BRANCH_NAME="deploy/${ENVIRONMENT}/${SHORT_SHA}"
+
+        if [ -f "$DEPLOYED_FILE" ]; then
+          CURRENT_SHA="$(jq -r '.sha // empty' "$DEPLOYED_FILE")"
+        else
+          CURRENT_SHA=""
+        fi
+
+        if [ "$CURRENT_SHA" = "$SHA" ]; then
+          echo "environments/${ENVIRONMENT} is already at ${SHA}. Nothing to deploy."
+          echo "pr_number=" >> "$GITHUB_OUTPUT"
+          echo "pr_url=" >> "$GITHUB_OUTPUT"
+          echo "branch_name=" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        EXISTING_PR_NUMBER="$(gh pr list --head "$BRANCH_NAME" --base "$BASE_BRANCH" --state open --json number --jq '.[0].number // empty')"
+
+        if [ -n "$EXISTING_PR_NUMBER" ]; then
+          echo "Deployment pull request #${EXISTING_PR_NUMBER} already open for ${BRANCH_NAME}."
+          EXISTING_PR_URL="$(gh pr view "$EXISTING_PR_NUMBER" --json url --jq '.url')"
+          echo "pr_number=${EXISTING_PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "pr_url=${EXISTING_PR_URL}" >> "$GITHUB_OUTPUT"
+          echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        REQUESTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+        mkdir -p "environments/${ENVIRONMENT}"
+        jq -n \
+          --arg ref "$REF" \
+          --arg sha "$SHA" \
+          --arg requestedAt "$REQUESTED_AT" \
+          --arg sourceWorkflowRunUrl "$RUN_URL" \
+          '{ref: $ref, sha: $sha, requestedAt: $requestedAt, sourceWorkflowRunUrl: $sourceWorkflowRunUrl}' \
+          > "$DEPLOYED_FILE"
+
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        git checkout -b "$BRANCH_NAME"
+        git add "$DEPLOYED_FILE"
+        git commit -m "chore(deploy): request ${ENVIRONMENT} deploy of ${SHORT_SHA}"
+        git push origin "$BRANCH_NAME"
+
+        PR_URL="$(gh pr create \
+          --base "$BASE_BRANCH" \
+          --head "$BRANCH_NAME" \
+          --title "Deploy ${ENVIRONMENT}: ${SHORT_SHA}" \
+          --body "Requests deployment of \`${ENVIRONMENT}\` to \`${SHA}\` (${REF}).
+
+        Opened automatically by [this workflow run](${RUN_URL}).
+        Merging this pull request will apply Terraform changes to \`${ENVIRONMENT}\`.")"
+
+        PR_NUMBER="$(gh pr view "$PR_URL" --json number --jq '.number')"
+
+        echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+        echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
+        echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
