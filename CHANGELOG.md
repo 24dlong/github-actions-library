@@ -1,3 +1,8 @@
+## 4.5.0 (2026-08-18)
+
+
+- feat: include environment name in terraform plan comment (#82)
+
 ## 4.4.0 (2026-08-18)
 
 
