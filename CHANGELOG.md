@@ -1,3 +1,8 @@
+## 4.3.0 (2026-08-18)
+
+
+- feat: support terraform plan and apply using a specific git sha (#80)
+
 ## 4.2.0 (2026-08-10)
 
 
