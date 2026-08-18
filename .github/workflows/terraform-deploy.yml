@@ -97,6 +97,7 @@ jobs:
         uses: 24dlong/github-actions-library/actions/terraform/plan@v4
         with:
           working-directory: ${{ inputs.working-directory }}
+          environment: ${{ matrix.environment }}
           aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_PLAN }}
           aws-region: ${{ vars.STATE_REGION }}
           github-token: ${{ secrets.github-token }}

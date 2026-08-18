@@ -1,12 +1,16 @@
 name: Plan Changes
 description: >-
   Runs terraform plan for a working directory, posts the rendered plan as a
-  pull request comment, and uploads the plan as a build artifact so a later
-  workflow run can apply the exact same plan after merge.
+  pull request comment labeled with the target environment, and uploads the
+  plan as a build artifact so a later workflow run can apply the exact same
+  plan after merge.
 
 inputs:
   working-directory:
-    description: Path to the Terraform root module to plan (e.g. "production").
+    description: Path to the Terraform root module to plan (e.g. "infra").
+    required: true
+  environment:
+    description: Environment name being planned (e.g. "production"). Shown in the pull request comment.
     required: true
   aws-role-to-assume:
     description: ARN of the AWS IAM role to assume for the plan (read-only credentials).
@@ -68,7 +72,7 @@ runs:
           const plan = fs.readFileSync(path, 'utf8');
           const trimmed = plan.length > 60000 ? `${plan.slice(0, 60000)}\n\n...truncated...` : plan;
           const body = [
-            `Terraform plan for \`${{ inputs.working-directory }}/\`:`,
+            `Terraform plan for \`${{ inputs.environment }}\`:`,
             '```diff',
             trimmed,
             '```'
