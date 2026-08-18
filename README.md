@@ -109,7 +109,13 @@ with:
   aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_PLAN }}
   aws-region: us-east-2
   github-token: ${{ secrets.GITHUB_TOKEN }}
+  ref: ${{ needs.changes.outputs.production-ref }} # optional
 ```
+
+`ref` is a git branch, tag, or SHA to check out before planning. Omit it to use the
+triggering event's ref (the default). For GitOps deploys driven by
+`environments/<env>/deployed.json`, pass the **pinned sha** from that file, not a
+moving branch name like `main`.
 
 #### Terraform Apply
 Resolves the pull request merged into the triggering commit, finds the matching
@@ -124,11 +130,16 @@ with:
   aws-region: us-east-2
   github-token: ${{ secrets.GITHUB_TOKEN }}
   plan-workflow-file: pull-request.yml
+  ref: ${{ needs.changes.outputs.production-ref }} # optional
 ```
 
 `plan-workflow-file` must match the file name (under `.github/workflows/`) of the
 workflow that ran the Terraform Plan action for pull requests, so the apply action can
 look up its completed runs via the GitHub API.
+
+`ref` has the same meaning as on the plan action. It only affects which tree is
+checked out for Terraform; plan-artifact lookup still uses the triggering commit
+(`GITHUB_SHA`).
 
 #### Terraform Deployment Pull Request
 Opens (or reuses) a pull request that bumps `environments/<environment>/deployed.json`

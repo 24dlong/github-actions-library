@@ -18,12 +18,21 @@ inputs:
   github-token:
     description: Token used to comment on the pull request. Typically secrets.GITHUB_TOKEN.
     required: true
+  ref:
+    description: >-
+      Git branch, tag, or SHA to check out before planning. Omit to use the
+      triggering event's ref (current behavior). For GitOps deploys, pass the
+      pinned sha from deployed.json, not a moving branch name.
+    required: false
+    default: ""
 
 runs:
   using: composite
   steps:
     - name: Checkout Code
       uses: actions/checkout@v7
+      with:
+        ref: ${{ inputs.ref }}
 
     - name: Setup Environment
       shell: bash
