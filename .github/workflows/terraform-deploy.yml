@@ -1,0 +1,114 @@
+# Reusable GitOps deploy workflow for consumer infra repos.
+# Not run in this repository: on.workflow_call only.
+#
+# Detects changed environments/<env>/deployed.json files, then fans out one
+# job per environment with `environment: <env>` so that GitHub Environment
+# vars and required reviewers apply. Calls terraform/plan or terraform/apply
+# with the pinned sha from deployed.json.
+
+name: Terraform GitOps Deploy
+
+on:
+  workflow_call:
+    inputs:
+      command:
+        description: Terraform command to run for each changed environment (`plan` or `apply`).
+        required: true
+        type: string
+      working-directory:
+        description: Path to the Terraform root module (e.g. "infra").
+        required: false
+        type: string
+        default: infra
+      plan-workflow-file:
+        description: >-
+          File name of the caller workflow (under .github/workflows) whose
+          successful pull_request run produced the saved plan artifact.
+          Apply only; ignored for plan. Must be the caller filename, not this
+          reusable workflow's filename.
+        required: false
+        type: string
+        default: pull-request-deploy.yml
+    secrets:
+      github-token:
+        description: >-
+          Token for GitHub API, PR comments, and plan-artifact upload/download.
+          Pass secrets.GITHUB_TOKEN for plan and a PAT (or GitHub App token)
+          for apply, matching the existing terraform/plan and terraform/apply
+          actions.
+        required: true
+
+jobs:
+  detect:
+    name: Identify Target Environments
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      matrix: ${{ steps.detect.outputs.matrix }}
+      any: ${{ steps.detect.outputs.any }}
+    steps:
+      - name: Validate command
+        env:
+          COMMAND: ${{ inputs.command }}
+        run: |
+          set -euo pipefail
+          case "$COMMAND" in
+            plan|apply) ;;
+            *)
+              echo "command must be 'plan' or 'apply', got '${COMMAND}'." >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Detect deploy targets
+        id: detect
+        uses: 24dlong/github-actions-library/actions/terraform/detect-deploy-targets@v4
+        with:
+          github-token: ${{ secrets.github-token }}
+
+  terraform:
+    name: ${{ inputs.command == 'plan' && format('Plan | {0}', matrix.environment) || format('Apply | {0}', matrix.environment) }}
+    needs: detect
+    if: needs.detect.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    environment: ${{ matrix.environment }}
+    concurrency:
+      group: terraform-deploy-${{ github.repository }}-${{ matrix.environment }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      actions: write
+    env:
+      TF_CLI_ARGS_init: >-
+        -backend-config=bucket=${{ vars.STATE_BUCKET }}
+        -backend-config=key=${{ vars.STATE_KEY }}
+        -backend-config=region=${{ vars.STATE_REGION }}
+        -backend-config=use_lockfile=true
+    steps:
+      - name: Plan
+        if: ${{ inputs.command == 'plan' }}
+        uses: 24dlong/github-actions-library/actions/terraform/plan@v4
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_PLAN }}
+          aws-region: ${{ vars.STATE_REGION }}
+          github-token: ${{ secrets.github-token }}
+          ref: ${{ matrix.ref }}
+
+      - name: Apply
+        if: ${{ inputs.command == 'apply' }}
+        uses: 24dlong/github-actions-library/actions/terraform/apply@v4
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_APPLY }}
+          aws-region: ${{ vars.STATE_REGION }}
+          github-token: ${{ secrets.github-token }}
+          plan-workflow-file: ${{ inputs.plan-workflow-file }}
+          ref: ${{ matrix.ref }}

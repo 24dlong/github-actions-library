@@ -163,6 +163,113 @@ be able to bypass branch protection on `base-branch` (e.g. a personal access tok
 GitHub App installation token) so it can push the deployment branch and open the pull
 request.
 
+#### Terraform GitOps Deploy
+Reusable workflow that detects which `environments/<env>/deployed.json` files
+changed, then fans out one job per environment. Each job sets
+`environment: <env>` so that GitHub Environment variables and required
+reviewers apply, then runs Terraform Plan (on pull request) or Terraform Apply
+(on merge) against the **pinned sha** from that file.
+
+This is the recommended way to wire plan/apply in an infra repo. Composite
+actions cannot own this graph: they cannot declare jobs, a matrix, or
+`environment:`.
+
+The consuming repo keeps a thin wrapper for the trigger only. Adding an
+environment is `environments/<env>/deployed.json` plus a GitHub Environment
+named `<env>` — no workflow copy-paste.
+
+Required layout and GitHub Environment variables (per environment):
+
+- `environments/<env>/deployed.json` with a `sha` field (directory name **is**
+  the GitHub Environment name)
+- `AWS_ROLE_ARN_PLAN`, `AWS_ROLE_ARN_APPLY`, `STATE_BUCKET`, `STATE_KEY`,
+  `STATE_REGION`
+
+```yaml
+# .github/workflows/pull-request-deploy.yml
+name: Deploy Plan Workflow
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "environments/**/deployed.json"
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    uses: 24dlong/github-actions-library/.github/workflows/terraform-deploy.yml@v4
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      actions: write
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+    with:
+      command: plan
+      working-directory: infra
+```
+
+```yaml
+# .github/workflows/merge-deploy.yml
+name: Deploy Apply Workflow
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "environments/**/deployed.json"
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    uses: 24dlong/github-actions-library/.github/workflows/terraform-deploy.yml@v4
+    permissions:
+      id-token: write
+      contents: read
+      actions: read
+      pull-requests: read
+    secrets:
+      github-token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+    with:
+      command: apply
+      working-directory: infra
+      plan-workflow-file: pull-request-deploy.yml
+```
+
+`plan-workflow-file` must be the **caller** workflow file name (the wrapper
+above), not `terraform-deploy.yml`. Plan artifacts attach to the caller run,
+and Terraform Apply looks up that run by workflow file name.
+
+The caller must grant permissions on the `uses:` job; reusable workflows cannot
+escalate them. That permission block does not grow with environment count.
+
+#### Detect Deploy Targets
+Lists `environments/<env>/deployed.json` files changed in the triggering pull
+request or push, reads each pinned `sha`, and emits a matrix JSON. Used by the
+GitOps Deploy reusable workflow; also usable on its own if a repo needs a
+custom job graph.
+
+```yaml
+- uses: 24dlong/github-actions-library/actions/terraform/detect-deploy-targets@v4
+  id: detect
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Outputs:
+
+- `matrix`: `{"include":[{"environment":"production","ref":"<sha>"},...]}` for
+  `strategy.matrix`
+- `any`: `true` if at least one environment file changed
+
 ## Contributing
 
 ### Initial Setup
