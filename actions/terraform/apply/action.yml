@@ -25,12 +25,22 @@ inputs:
       File name of the workflow (in .github/workflows) whose successful
       pull_request run produced the saved plan artifact (e.g. "pull-request.yml").
     required: true
+  ref:
+    description: >-
+      Git branch, tag, or SHA to check out before applying. Omit to use the
+      triggering event's ref (current behavior). For GitOps deploys, pass the
+      pinned sha from deployed.json, not a moving branch name. Does not affect
+      plan-artifact lookup, which still uses the triggering commit.
+    required: false
+    default: ""
 
 runs:
   using: composite
   steps:
     - name: Checkout Code
       uses: actions/checkout@v7
+      with:
+        ref: ${{ inputs.ref }}
 
     - name: Setup Environment
       shell: bash
