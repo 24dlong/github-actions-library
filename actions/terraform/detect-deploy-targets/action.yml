@@ -1,0 +1,117 @@
+name: Detect Deploy Targets
+description: >-
+  Identifies which environments/<env>/deployed.json files changed in the
+  triggering pull request or push, reads each file's pinned sha, and emits
+  a GitHub Actions matrix that a later job can fan out over.
+
+inputs:
+  github-token:
+    description: Token used to list changed files via the GitHub API.
+    required: true
+
+outputs:
+  matrix:
+    description: >-
+      JSON object of the form {"include":[{"environment":"<env>","ref":"<sha>"},...]}
+      suitable for strategy.matrix. Include is empty when nothing matched.
+    value: ${{ steps.detect.outputs.matrix }}
+  any:
+    description: "true if at least one environment deployed.json changed, otherwise false."
+    value: ${{ steps.detect.outputs.any }}
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout Code
+      uses: actions/checkout@v7
+
+    - name: Detect changed environments
+      id: detect
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        EVENT_NAME: ${{ github.event_name }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        BEFORE_SHA: ${{ github.event.before }}
+        AFTER_SHA: ${{ github.sha }}
+      run: |
+        set -euo pipefail
+
+        ZERO_SHA="0000000000000000000000000000000000000000"
+        INCLUDE_FILE="$(mktemp)"
+        echo '[]' > "$INCLUDE_FILE"
+
+        list_changed_files() {
+          if [ -n "$PR_NUMBER" ]; then
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+              --jq '.[] | select(.status != "removed") | .filename'
+            return
+          fi
+
+          if [ "$EVENT_NAME" = "push" ] || [ -n "$BEFORE_SHA" ]; then
+            if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "$ZERO_SHA" ]; then
+              if [ -d environments ]; then
+                find environments -mindepth 2 -maxdepth 2 -type f -name deployed.json
+              fi
+              return
+            fi
+            gh api "repos/${GITHUB_REPOSITORY}/compare/${BEFORE_SHA}...${AFTER_SHA}" \
+              --jq '.files[]? | select(.status != "removed") | .filename'
+            return
+          fi
+
+          echo "Unable to determine changed files; expected a pull_request or push event (got '${EVENT_NAME}')." >&2
+          exit 1
+        }
+
+        add_environment() {
+          local env_name="$1"
+          local deployed_file="environments/${env_name}/deployed.json"
+
+          if [ ! -f "$deployed_file" ]; then
+            echo "Skipping ${deployed_file} (file not present in the checked-out tree)."
+            return
+          fi
+
+          local sha
+          sha="$(jq -r '.sha // empty' "$deployed_file")"
+          if [ -z "$sha" ]; then
+            echo "${deployed_file} is missing a sha." >&2
+            exit 1
+          fi
+
+          local tmp
+          tmp="$(mktemp)"
+          jq --arg environment "$env_name" --arg ref "$sha" \
+            'if any(.environment == $environment) then . else . + [{environment: $environment, ref: $ref}] end' \
+            "$INCLUDE_FILE" > "$tmp"
+          mv "$tmp" "$INCLUDE_FILE"
+        }
+
+        CHANGED_FILES="$(list_changed_files)"
+        if [ -n "$CHANGED_FILES" ]; then
+          while IFS= read -r filename; do
+            [ -z "$filename" ] && continue
+            if [[ "$filename" =~ ^environments/([^/]+)/deployed\.json$ ]]; then
+              add_environment "${BASH_REMATCH[1]}"
+            fi
+          done <<< "$CHANGED_FILES"
+        fi
+
+        COUNT="$(jq 'length' "$INCLUDE_FILE")"
+        MATRIX="$(jq -c '{include: .}' "$INCLUDE_FILE")"
+
+        if [ "$COUNT" -gt 0 ]; then
+          echo "Detected deploy targets:"
+          jq -r '.[] | "  - \(.environment) @ \(.ref)"' "$INCLUDE_FILE"
+          echo "any=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "No environments/*/deployed.json changes detected."
+          echo "any=false" >> "$GITHUB_OUTPUT"
+        fi
+
+        {
+          echo "matrix<<EOF"
+          echo "$MATRIX"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
