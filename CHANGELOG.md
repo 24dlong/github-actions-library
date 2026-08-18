@@ -1,3 +1,8 @@
+## 4.4.0 (2026-08-18)
+
+
+- feat: add a terraform deployment workflow (#81)
+
 ## 4.3.0 (2026-08-18)
 
 
