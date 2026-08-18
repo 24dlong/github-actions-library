@@ -99,13 +99,15 @@ personal access token or GitHub App installation token).
 ### Actions for Terraform Repositories
 #### Terraform Plan
 Runs `terraform plan` for a given root module, comments the rendered plan on the pull
-request, and uploads the plan as a build artifact keyed by PR number and head SHA so a
-later apply run can reuse the exact same plan. Intended to run on `pull_request`.
+request (headed `Terraform plan for <environment>`), and uploads the plan as a build
+artifact keyed by PR number and head SHA so a later apply run can reuse the exact
+same plan. Intended to run on `pull_request`.
 
 ```yaml
 uses: 24dlong/github-actions-library/actions/terraform/plan@v4
 with:
-  working-directory: production
+  working-directory: infra
+  environment: production
   aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_PLAN }}
   aws-region: us-east-2
   github-token: ${{ secrets.GITHUB_TOKEN }}
