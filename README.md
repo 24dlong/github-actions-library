@@ -112,12 +112,19 @@ with:
   aws-region: us-east-2
   github-token: ${{ secrets.GITHUB_TOKEN }}
   ref: ${{ needs.changes.outputs.production-ref }} # optional
+  var-file: environments/production/terraform.tfvars # optional
 ```
 
 `ref` is a git branch, tag, or SHA to check out before planning. Omit it to use the
 triggering event's ref (the default). For GitOps deploys driven by
 `environments/<env>/deployed.json`, pass the **pinned sha** from that file, not a
 moving branch name like `main`.
+
+`var-file` is passed straight through as `-var-file`. Omit it to plan with only
+`variables.tf` defaults. Terraform variable overrides belong in a git-tracked
+`.tfvars` file (reviewable in the plan output itself) rather than as GitHub
+Environment variables -- see the Terraform GitOps Deploy section below for why
+backend/role configuration is treated differently.
 
 #### Terraform Apply
 Resolves the pull request merged into the triggering commit, finds the matching
@@ -177,15 +184,29 @@ actions cannot own this graph: they cannot declare jobs, a matrix, or
 `environment:`.
 
 The consuming repo keeps a thin wrapper for the trigger only. Adding an
-environment is `environments/<env>/deployed.json` plus a GitHub Environment
-named `<env>` — no workflow copy-paste.
+environment is `environments/<env>/` (two git files) plus a GitHub
+Environment named `<env>` (five variables) — no workflow copy-paste.
 
-Required layout and GitHub Environment variables (per environment):
+Required layout, split by whether a value shows up in the `terraform plan`
+diff before it takes effect (safe as a PR-reviewable git file) or takes
+effect before any plan exists, such as which state file gets written or
+which AWS identity CI assumes (needs the admin-gated bar of a GitHub
+Environment variable):
 
 - `environments/<env>/deployed.json` with a `sha` field (directory name **is**
-  the GitHub Environment name)
-- `AWS_ROLE_ARN_PLAN`, `AWS_ROLE_ARN_APPLY`, `STATE_BUCKET`, `STATE_KEY`,
-  `STATE_REGION`
+  the GitHub Environment name) — the GitOps trigger.
+- `environments/<env>/terraform.tfvars` — Terraform variable overrides for
+  that environment (e.g. `environment`, resource naming, tags). Passed to
+  Terraform Plan automatically as `-var-file`. Terraform Apply does not need
+  it: it replays the saved binary plan, which already encodes the values
+  used to produce it.
+- GitHub Environment `<env>` variables: `AWS_ROLE_ARN_PLAN`,
+  `AWS_ROLE_ARN_APPLY`, `STATE_BUCKET`, `STATE_KEY`, `STATE_REGION`. These
+  control where this environment's Terraform state is written and what AWS
+  identity CI assumes -- both resolved before any plan is generated, so a
+  git file would let any approved PR silently redirect them with no
+  plan-diff visible for review. Keeping them here means changing them
+  requires GitHub Environment/repo admin access, not just a PR approval.
 
 ```yaml
 # .github/workflows/pull-request-deploy.yml
