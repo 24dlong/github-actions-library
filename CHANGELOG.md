@@ -1,3 +1,8 @@
+## 4.6.0 (2026-08-20)
+
+
+- feat: add support for sending tf vars to terraform plan action (#83)
+
 ## 4.5.0 (2026-08-18)
 
 
