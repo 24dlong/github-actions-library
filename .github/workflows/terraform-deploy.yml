@@ -5,6 +5,14 @@
 # job per environment with `environment: <env>` so that GitHub Environment
 # vars and required reviewers apply. Calls terraform/plan or terraform/apply
 # with the pinned sha from deployed.json.
+#
+# Plan also passes -var-file=environments/<env>/terraform.tfvars: every
+# consumer must keep that file in git for each environment. Backend
+# bucket/key/region and AWS role ARNs stay as GitHub Environment variables
+# (vars.STATE_*, vars.AWS_ROLE_ARN_*) since they control where state is
+# written and what identity CI assumes -- decisions that take effect before
+# any plan is generated, so they need the admin-gated bar of a GitHub
+# Environment rather than a PR-reviewable git file.
 
 name: Terraform GitOps Deploy
 
@@ -102,6 +110,7 @@ jobs:
           aws-region: ${{ vars.STATE_REGION }}
           github-token: ${{ secrets.github-token }}
           ref: ${{ matrix.ref }}
+          var-file: ${{ github.workspace }}/environments/${{ matrix.environment }}/terraform.tfvars
 
       - name: Apply
         if: ${{ inputs.command == 'apply' }}

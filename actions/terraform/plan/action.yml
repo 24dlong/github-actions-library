@@ -29,6 +29,13 @@ inputs:
       pinned sha from deployed.json, not a moving branch name.
     required: false
     default: ""
+  var-file:
+    description: >-
+      Path to a .tfvars file to pass as -var-file (e.g.
+      environments/<env>/terraform.tfvars). Omit to plan with only
+      variables.tf defaults.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -54,7 +61,15 @@ runs:
 
     - name: Terraform plan
       shell: bash
-      run: mise exec -- terraform -chdir=${{ inputs.working-directory }} plan -lock=false -out=tfplan
+      env:
+        VAR_FILE: ${{ inputs.var-file }}
+      run: |
+        set -euo pipefail
+        args=(-lock=false -out=tfplan)
+        if [ -n "$VAR_FILE" ]; then
+          args+=(-var-file="$VAR_FILE")
+        fi
+        mise exec -- terraform -chdir=${{ inputs.working-directory }} plan "${args[@]}"
 
     - name: Render plan text
       shell: bash
