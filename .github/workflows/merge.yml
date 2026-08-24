@@ -12,7 +12,8 @@ jobs:
       contents: write
     steps:
       - name: Publish
-        uses: 24dlong/github-actions-library/actions/publish@v4
+        uses: 24dlong/github-actions-library/actions/publish@v5
         with:
           # required to bypass branch protection in user-owned repositories
-          GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          GITHUB_WORKFLOWS_CLIENT_ID: ${{ vars.GH_WORKFLOWS_APP_CLIENT_ID }}
+          GITHUB_WORKFLOWS_PRIVATE_KEY: ${{ secrets.GH_WORKFLOWS_APP_PRIVATE_KEY }}
