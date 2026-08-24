@@ -1,3 +1,10 @@
+## 5.0.0 (2026-08-24)
+
+
+- refactor!: migrate publish to use a GitHub App instead of a PAT when publishing versions (#84)
+- BREAKING CHANGE: repositories will have to migrate from passing a PERSONAL_ACCESS_TOKEN
+input to a GITHUB_WORKFLOWS_CLIENT_ID input and GITHUB_WORKFLOWS_PRIVATE_KEY input
+
 ## 4.6.0 (2026-08-20)
 
 
