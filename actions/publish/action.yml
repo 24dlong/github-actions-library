@@ -6,11 +6,13 @@ description: >-
   triggered by its own version-bump commit, to avoid retriggering itself.
 
 inputs:
-  GITHUB_TOKEN:
+  GITHUB_WORKFLOWS_CLIENT_ID:
     description: >-
-      Token used to push the version bump commit and tags. Must be able to
-      bypass branch protection on the target branch (e.g. a personal access
-      token or GitHub App installation token).
+      The client ID of a GitHub App with permissions to bypass branch protection, push commits, and create tags.
+    required: true
+  GITHUB_WORKFLOWS_PRIVATE_KEY:
+    description: >-
+      The private key of a GitHub App with permissions to bypass branch protection, push commits, and create tags.
     required: true
 
 outputs:
@@ -21,11 +23,19 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Generate Github Token
+      uses: actions/create-github-app-token@v3
+      id: github-token
+      with:
+        client-id: ${{ inputs.GITHUB_WORKFLOWS_CLIENT_ID }}
+        private-key: ${{ inputs.GITHUB_WORKFLOWS_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+
     - name: Checkout Code
       if: ${{ !startsWith(github.event.head_commit.message, 'bump:') }}
       uses: actions/checkout@v7
       with:
-        token: ${{ inputs.GITHUB_TOKEN }}
+        token: ${{ steps.github-token.outputs.token }}
         fetch-depth: 0
 
     - name: Bump Version
@@ -33,7 +43,7 @@ runs:
       if: ${{ !startsWith(github.event.head_commit.message, 'bump:') }}
       uses: commitizen-tools/commitizen-action@0.27.1
       with:
-        github_token: ${{ inputs.GITHUB_TOKEN }}
+        github_token: ${{ steps.github-token.outputs.token }}
 
     - name: Tag Major Version
       if: ${{ !startsWith(github.event.head_commit.message, 'bump:') }}
