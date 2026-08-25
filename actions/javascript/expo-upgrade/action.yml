@@ -69,7 +69,7 @@ runs:
 
     - name: Upgrade Expo Dependencies
       env:
-        EAS_NO_FROZEN_LOCKFILE: 1
+        CI: false # pnpm enables frozen-lockfile when CI=true
       run: pnpm exec expo install --fix
       shell: bash
 
