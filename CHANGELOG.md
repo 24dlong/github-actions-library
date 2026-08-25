@@ -1,3 +1,10 @@
+## 5.0.1 (2026-08-25)
+
+
+- chore(deps): update pre-commit hook commitizen-tools/commitizen to v4.17.1 (#86)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+- chore: bump merge workflow to v5 (#85)
+
 ## 5.0.0 (2026-08-24)
 
 
