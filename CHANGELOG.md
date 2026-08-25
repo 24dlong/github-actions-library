@@ -1,3 +1,8 @@
+## 5.0.2 (2026-08-25)
+
+
+- fix: fix expo install lockfile issue (#87)
+
 ## 5.0.1 (2026-08-25)
 
 
