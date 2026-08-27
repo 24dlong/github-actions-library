@@ -37,13 +37,20 @@ on:
         required: false
         type: string
         default: pull-request-deploy.yml
+      github-app-client-id:
+        description: >-
+          Client Id of a GitHub App with permission to download workflow artifacts from the repository.
+        required: true
+        type: string
     secrets:
       github-token:
         description: >-
-          Token for GitHub API, PR comments, and plan-artifact upload/download.
-          Pass secrets.GITHUB_TOKEN for plan and a PAT (or GitHub App token)
-          for apply, matching the existing terraform/plan and terraform/apply
-          actions.
+          Token for generic repository access. Things like code checkout,  PR comments, etc
+          Recommended to pass secrets.GITHUB_TOKEN
+        required: true
+      github-app-private-key:
+        description: >-
+          Private key of a GitHub App with permission to download workflow artifacts from the repository.
         required: true
 
 jobs:
@@ -72,7 +79,7 @@ jobs:
 
       - name: Detect deploy targets
         id: detect
-        uses: 24dlong/github-actions-library/actions/terraform/detect-deploy-targets@v4
+        uses: 24dlong/github-actions-library/actions/terraform/detect-deploy-targets@v5
         with:
           github-token: ${{ secrets.github-token }}
 
@@ -102,7 +109,7 @@ jobs:
     steps:
       - name: Plan
         if: ${{ inputs.command == 'plan' }}
-        uses: 24dlong/github-actions-library/actions/terraform/plan@v4
+        uses: 24dlong/github-actions-library/actions/terraform/plan@v5
         with:
           working-directory: ${{ inputs.working-directory }}
           environment: ${{ matrix.environment }}
@@ -114,11 +121,12 @@ jobs:
 
       - name: Apply
         if: ${{ inputs.command == 'apply' }}
-        uses: 24dlong/github-actions-library/actions/terraform/apply@v4
+        uses: 24dlong/github-actions-library/actions/terraform/apply@v5
         with:
           working-directory: ${{ inputs.working-directory }}
           aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_APPLY }}
           aws-region: ${{ vars.STATE_REGION }}
-          github-token: ${{ secrets.github-token }}
+          github-app-client-id: ${{ inputs.github-app-client-id }}
+          github-app-private-key: ${{ secrets.github-app-private-key }}
           plan-workflow-file: ${{ inputs.plan-workflow-file }}
           ref: ${{ matrix.ref }}

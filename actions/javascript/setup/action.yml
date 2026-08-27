@@ -25,7 +25,7 @@ runs:
   using: composite
   steps:
     - name: Setup JavaScript Environment
-      uses: 24dlong/github-actions-library/actions/javascript/setup-no-install@v4
+      uses: 24dlong/github-actions-library/actions/javascript/setup-no-install@v5
       with:
         AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
         AWS_REGION: ${{ inputs.AWS_REGION }}

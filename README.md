@@ -18,7 +18,7 @@ Requires a Makefile with the following commands implemented:
 - `make build`: Builds the project.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v4
+uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v5
 ```
 
 #### Expo Quality Gate
@@ -28,13 +28,13 @@ Expo Doctor.
 Requires the same Makefile commands and AWS inputs as the base Quality Gate action.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/expo/quality-gate@v4
+uses: 24dlong/github-actions-library/actions/javascript/expo/quality-gate@v5
 ```
 
 ### Publish
 Executes the quality gate action and executes a publish command if checks pass.
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/publish@v4
+uses: 24dlong/github-actions-library/actions/javascript/publish@v5
 with:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -46,7 +46,7 @@ create a GitHub release and version tag.
 ### Library Publish
 Runs quality checks and publishes a JavaScript library to AWS CodeArtifact.
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/library/publish@v4
+uses: 24dlong/github-actions-library/actions/javascript/library/publish@v5
 with:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   AWS_ACCOUNT_ID: "your-account-id"
@@ -65,7 +65,7 @@ command should also publish the library to CodeArtifact. The action handles auth
 Checks out the repository and runs lint checks. Not specific to any language or technology.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/quality-gate@v4
+uses: 24dlong/github-actions-library/actions/quality-gate@v5
 ```
 
 Requires a Makefile with the following commands implemented:
@@ -88,7 +88,7 @@ language or technology. All steps are skipped when triggered by its own version-
 commit (any commit message starting with `bump:`), to avoid retriggering itself.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/publish@v4
+uses: 24dlong/github-actions-library/actions/publish@v5
 with:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -104,7 +104,7 @@ artifact keyed by PR number and head SHA so a later apply run can reuse the exac
 same plan. Intended to run on `pull_request`.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/terraform/plan@v4
+uses: 24dlong/github-actions-library/actions/terraform/plan@v5
 with:
   working-directory: infra
   environment: production
@@ -132,7 +132,7 @@ successful plan workflow run, downloads its saved plan artifact, and applies it 
 Intended to run on push to `main`.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/terraform/apply@v4
+uses: 24dlong/github-actions-library/actions/terraform/apply@v5
 with:
   working-directory: production
   aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_APPLY }}
@@ -158,7 +158,7 @@ be called both for a repository's lowest environment on every merge to `main`, a
 later by a promotion workflow for upper environments.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/terraform/deployment-pr@v4
+uses: 24dlong/github-actions-library/actions/terraform/deployment-pr@v5
 with:
   environment: production
   ref: ${{ github.sha }}
@@ -224,7 +224,7 @@ permissions:
 
 jobs:
   plan:
-    uses: 24dlong/github-actions-library/.github/workflows/terraform-deploy.yml@v4
+    uses: 24dlong/github-actions-library/.github/workflows/terraform-deploy.yml@v5
     permissions:
       id-token: write
       contents: read
@@ -253,7 +253,7 @@ permissions:
 
 jobs:
   apply:
-    uses: 24dlong/github-actions-library/.github/workflows/terraform-deploy.yml@v4
+    uses: 24dlong/github-actions-library/.github/workflows/terraform-deploy.yml@v5
     permissions:
       id-token: write
       contents: read
@@ -281,7 +281,7 @@ GitOps Deploy reusable workflow; also usable on its own if a repo needs a
 custom job graph.
 
 ```yaml
-- uses: 24dlong/github-actions-library/actions/terraform/detect-deploy-targets@v4
+- uses: 24dlong/github-actions-library/actions/terraform/detect-deploy-targets@v5
   id: detect
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}

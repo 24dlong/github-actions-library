@@ -15,10 +15,13 @@ inputs:
     description: AWS region to configure credentials for.
     required: false
     default: us-east-2
-  github-token:
+  github-app-client-id:
     description: >-
-      Token used to query the PR/workflow run and download the plan artifact.
-      Typically secrets.GITHUB_TOKEN.
+      Client Id of a GitHub App with permission to download workflow artifacts from the repository.
+    required: true
+  github-app-private-key:
+    description: >-
+      Private key of a GitHub App with permission to download workflow artifacts from the repository.
     required: true
   plan-workflow-file:
     description: >-
@@ -52,11 +55,20 @@ runs:
         role-to-assume: ${{ inputs.aws-role-to-assume }}
         aws-region: ${{ inputs.aws-region }}
 
+    - name: Create GitHub App Token
+      id: app-token
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.github-app-client-id }}
+        private-key: ${{ inputs.github-app-private-key }}
+        permission-actions: read
+        permission-pull-requests: read
+
     - name: Get Workflow Run ID
       id: resolve
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ steps.app-token.outputs.token }}
         PLAN_WORKFLOW_FILE: ${{ inputs.plan-workflow-file }}
       run: |
         set -euo pipefail
@@ -91,7 +103,7 @@ runs:
     - name: Download saved plan artifact
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ steps.app-token.outputs.token }}
       run: |
         set -euo pipefail
         mkdir -p ${{ inputs.working-directory }}
