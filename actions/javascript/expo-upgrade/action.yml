@@ -5,9 +5,6 @@ inputs:
   GITHUB_APP_CLIENT_ID:
     description: GitHub App client ID used to commit dependency updates.
     required: true
-  GITHUB_APP_PRIVATE_KEY:
-    description: GitHub App private key used to commit dependency updates.
-    required: true
   AWS_ACCOUNT_ID:
     description: AWS Account ID hosting CodeArtifact.
     required: true
@@ -49,7 +46,7 @@ runs:
         token: ${{ steps.app-token.outputs.token }}
 
     - name: Setup JavaScript Environment
-      uses: 24dlong/github-actions-library/actions/javascript/setup-no-install@v4
+      uses: 24dlong/github-actions-library/actions/javascript/setup-no-install@v5
       with:
         AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
         AWS_REGION: ${{ inputs.AWS_REGION }}
@@ -75,7 +72,7 @@ runs:
 
     - name: Commit Expo Dependency Updates
       id: commit
-      uses: 24dlong/github-actions-library/actions/javascript/commit@v4
+      uses: 24dlong/github-actions-library/actions/javascript/commit@v5
       with:
         GITHUB_APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
         GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}

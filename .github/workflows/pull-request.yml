@@ -10,4 +10,4 @@ jobs:
     runs-on: ubuntu-latest
     name: Quality Gate | Core
     steps:
-      - uses: 24dlong/github-actions-library/actions/quality-gate@v4
+      - uses: 24dlong/github-actions-library/actions/quality-gate@v5

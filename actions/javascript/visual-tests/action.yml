@@ -38,7 +38,7 @@ runs:
         ref: ${{ github.event.pull_request.head.ref }}
 
     - name: Setup JavaScript
-      uses: 24dlong/github-actions-library/actions/javascript/setup@v4
+      uses: 24dlong/github-actions-library/actions/javascript/setup@v5
       with:
         AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
         AWS_REGION: ${{ inputs.AWS_REGION }}
