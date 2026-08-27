@@ -1,3 +1,8 @@
+## 5.0.4 (2026-08-27)
+
+
+- refactor: migrate terraform apply action to use github app token (#89)
+
 ## 5.0.3 (2026-08-27)
 
 
