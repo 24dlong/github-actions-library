@@ -1,3 +1,9 @@
+## 5.0.3 (2026-08-27)
+
+
+- chore(deps): update pre-commit hook commitizen-tools/commitizen to v4.18.0 (#88)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+
 ## 5.0.2 (2026-08-25)
 
 
