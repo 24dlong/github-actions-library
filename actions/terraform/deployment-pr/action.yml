@@ -13,11 +13,13 @@ inputs:
   ref:
     description: Git ref or sha to request as the environment's desired state.
     required: true
-  github-token:
+  github-app-client-id:
     description: >-
-      Token used to push the branch and open the pull request. Must be able to bypass
-      branch protection on base-branch (e.g. a personal access token or GitHub App
-      installation token).
+      Client Id of a GitHub App with permission to download workflow artifacts from the repository.
+    required: true
+  github-app-private-key:
+    description: >-
+      Private key of a GitHub App with permission to download workflow artifacts from the repository.
     required: true
   base-branch:
     description: Branch the deployment pull request should target.
@@ -45,11 +47,23 @@ runs:
         ref: ${{ inputs.base-branch }}
         fetch-depth: 0
 
+    - name: Create GitHub App Token
+      id: app-token
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.github-app-client-id }}
+        private-key: ${{ inputs.github-app-private-key }}
+        permission-contents: write
+        permission-pull-requests: write
+
     - name: Resolve ref and update deployed.json
       id: pr
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
+        # Github actions can't create pull requests if the "Allow GitHub Actions to
+        # create and approve pull requests" setting is not enabled on the repository.
+        # This is currently not supported by safe-settings, so using our app token instead.
+        GH_TOKEN: ${{ steps.app-token.outputs.token }}
         ENVIRONMENT: ${{ inputs.environment }}
         REF: ${{ inputs.ref }}
         BASE_BRANCH: ${{ inputs.base-branch }}
