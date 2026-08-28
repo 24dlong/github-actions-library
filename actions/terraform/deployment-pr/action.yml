@@ -43,7 +43,6 @@ runs:
     - name: Checkout Code
       uses: actions/checkout@v7
       with:
-        token: ${{ inputs.github-token }}
         ref: ${{ inputs.base-branch }}
         fetch-depth: 0
 
