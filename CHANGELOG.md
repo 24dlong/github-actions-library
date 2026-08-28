@@ -1,3 +1,8 @@
+## 5.0.5 (2026-08-28)
+
+
+- refactor: migrate deployment-pr to use an app token (#90)
+
 ## 5.0.4 (2026-08-27)
 
 
