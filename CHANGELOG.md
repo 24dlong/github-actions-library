@@ -1,3 +1,8 @@
+## 5.0.6 (2026-08-28)
+
+
+- fix: update deployment-pr checkout to use default token (#91)
+
 ## 5.0.5 (2026-08-28)
 
 
