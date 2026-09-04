@@ -1,3 +1,9 @@
+## 5.1.0 (2026-09-04)
+
+
+- feat: add reusable terraform destroy workflow (#92)
+- Co-authored-by: Cursor <cursoragent@cursor.com>
+
 ## 5.0.6 (2026-08-28)
 
 
