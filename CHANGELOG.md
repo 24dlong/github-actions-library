@@ -1,3 +1,9 @@
+## 5.1.1 (2026-09-04)
+
+
+- chore(deps): update actions/download-artifact action to v8 (#93)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+
 ## 5.1.0 (2026-09-04)
 
 
