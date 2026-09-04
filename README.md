@@ -274,6 +274,94 @@ and Terraform Apply looks up that run by workflow file name.
 The caller must grant permissions on the `uses:` job; reusable workflows cannot
 escalate them. That permission block does not grow with environment count.
 
+#### Terraform Destroy
+Reusable workflow that destroys **application** Terraform (`infra/`) after a
+typed confirmation and a GitHub Environment approval. Composite actions
+cannot own this graph: they cannot declare jobs or `environment:`.
+
+Flow:
+
+1. `confirm` — fail immediately unless `confirmation` equals
+   `expected-confirmation` exactly. No AWS.
+2. `plan-destroy` — `environment: <environment>` (e.g. `production`), assumes
+   `vars.AWS_ROLE_ARN_PLAN`, runs `make plan` with `-destroy`, prints the
+   plan, uploads a same-run artifact. Uses the same concurrency group as
+   GitOps Deploy so plan/apply and destroy cannot overlap.
+3. `destroy` — `environment: <destroy-github-environment>` (default
+   `destroy`). This job waits for required reviewers. Assumes
+   `vars.AWS_ROLE_ARN_DESTROY` and runs `make apply PLAN_FILE=tfplan`.
+
+The consuming repo keeps a thin `workflow_dispatch` wrapper. OIDC roles are
+**not** destroyed here; they live in a separate Terraform root applied
+locally.
+
+Required GitHub Environment `destroy` (in addition to `<env>` used for plan):
+
+- Required reviewers (configure in the GitHub UI; cannot be set from repo files)
+- Deployment branches restricted to `main` (recommended)
+- Variables: `AWS_ROLE_ARN_DESTROY`, plus the same `STATE_BUCKET` /
+  `STATE_KEY` / `STATE_REGION` as the Terraform environment being destroyed
+  (a job can only use one GitHub Environment)
+
+Do not put `AWS_ROLE_ARN_APPLY` on `destroy`, and do not put
+`AWS_ROLE_ARN_DESTROY` on `<env>`. No AWS access keys.
+
+The consumer Makefile must implement `make plan` (honors `TF_FLAGS` and
+`ENV`) and `make apply` (honors `PLAN_FILE=tfplan` to replay a saved plan).
+`make setup-env` is also required.
+
+```yaml
+# .github/workflows/terraform-destroy.yml
+name: Destroy Application Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type exactly DESTROY <project>/<environment>
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  destroy:
+    uses: 24dlong/github-actions-library/.github/workflows/terraform-destroy.yml@v5
+    permissions:
+      id-token: write
+      contents: read
+      actions: write
+    with:
+      working-directory: infra
+      environment: production
+      confirmation: ${{ inputs.confirmation }}
+      expected-confirmation: DESTROY example-app-infra/production
+```
+
+No GitHub App secrets. Caller must grant `id-token: write` (OIDC),
+`contents: read`, and `actions: write` (plan artifact).
+
+#### Terraform Plan Destroy / Apply Destroy
+Composites used by the destroy reusable workflow. Prefer calling the
+reusable workflow rather than these directly.
+
+```yaml
+- uses: 24dlong/github-actions-library/actions/terraform/plan-destroy@v5
+  with:
+    working-directory: infra
+    environment: production
+    aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_PLAN }}
+    aws-region: us-east-2
+
+- uses: 24dlong/github-actions-library/actions/terraform/apply-destroy@v5
+  with:
+    working-directory: infra
+    environment: production
+    aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_DESTROY }}
+    aws-region: us-east-2
+```
+
 #### Detect Deploy Targets
 Lists `environments/<env>/deployed.json` files changed in the triggering pull
 request or push, reads each pinned `sha`, and emits a matrix JSON. Used by the

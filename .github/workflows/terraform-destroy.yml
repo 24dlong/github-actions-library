@@ -1,0 +1,113 @@
+# Reusable destroy workflow for consumer infra repos.
+# Not run in this repository: on.workflow_call only.
+#
+# Confirms an exact typed string, plans terraform destroy with the
+# environment's read-only plan role, then applies the saved plan with a
+# dedicated destroy role after the `destroy` GitHub Environment's
+# required reviewers approve. Same-run artifact; no GitHub App.
+
+name: Terraform Destroy
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Path to the Terraform root module (e.g. "infra").
+        required: false
+        type: string
+        default: infra
+      environment:
+        description: >-
+          Terraform environment / GitHub Environment used for the
+          destroy plan (e.g. "production"). Supplies STATE_* and
+          AWS_ROLE_ARN_PLAN.
+        required: true
+        type: string
+      destroy-github-environment:
+        description: >-
+          GitHub Environment used for the destroy apply job. Must
+          require reviewers. Supplies STATE_* and AWS_ROLE_ARN_DESTROY.
+        required: false
+        type: string
+        default: destroy
+      confirmation:
+        description: Caller-supplied confirmation string from workflow_dispatch.
+        required: true
+        type: string
+      expected-confirmation:
+        description: Exact string the confirmation input must match.
+        required: true
+        type: string
+
+jobs:
+  confirm:
+    name: Confirm destroy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Require exact confirmation
+        env:
+          GOT: ${{ inputs.confirmation }}
+          EXPECTED: ${{ inputs.expected-confirmation }}
+        run: |
+          set -euo pipefail
+          if [ "$GOT" != "$EXPECTED" ]; then
+            echo "Confirmation did not match. Destroy will not run." >&2
+            echo "Type the exact string shown in the workflow input description." >&2
+            exit 1
+          fi
+
+  plan-destroy:
+    name: Plan destroy | ${{ inputs.environment }}
+    needs: confirm
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: terraform-deploy-${{ github.repository }}-${{ inputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+      actions: write
+    env:
+      TF_CLI_ARGS_init: >-
+        -backend-config=bucket=${{ vars.STATE_BUCKET }}
+        -backend-config=key=${{ vars.STATE_KEY }}
+        -backend-config=region=${{ vars.STATE_REGION }}
+        -backend-config=use_lockfile=true
+    steps:
+      - name: Plan destroy
+        uses: 24dlong/github-actions-library/actions/terraform/plan-destroy@v5
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          environment: ${{ inputs.environment }}
+          aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_PLAN }}
+          aws-region: ${{ vars.STATE_REGION }}
+
+  destroy:
+    name: Destroy | ${{ inputs.environment }}
+    needs: plan-destroy
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.destroy-github-environment }}
+    concurrency:
+      group: terraform-deploy-${{ github.repository }}-${{ inputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+      actions: write
+    env:
+      TF_CLI_ARGS_init: >-
+        -backend-config=bucket=${{ vars.STATE_BUCKET }}
+        -backend-config=key=${{ vars.STATE_KEY }}
+        -backend-config=region=${{ vars.STATE_REGION }}
+        -backend-config=use_lockfile=true
+    steps:
+      - name: Apply destroy plan
+        uses: 24dlong/github-actions-library/actions/terraform/apply-destroy@v5
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          environment: ${{ inputs.environment }}
+          aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_DESTROY }}
+          aws-region: ${{ vars.STATE_REGION }}

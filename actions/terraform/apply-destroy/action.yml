@@ -1,0 +1,48 @@
+name: Apply Destroy
+description: >-
+  Downloads the terraform destroy plan artifact produced earlier in this
+  workflow run and applies it via `make apply PLAN_FILE=tfplan` so the
+  destroy matches the reviewed plan. Intended for the GitHub
+  Environment-gated destroy job. The consumer Makefile must implement
+  `make apply` with PLAN_FILE support.
+
+inputs:
+  working-directory:
+    description: Path to the Terraform root module to destroy (e.g. "infra"). Passed as INFRA_DIR.
+    required: true
+  environment:
+    description: Terraform environment name (e.g. "production"). Passed as ENV.
+    required: true
+  aws-role-to-assume:
+    description: ARN of the AWS IAM role to assume for the destroy (destroy-role credentials).
+    required: true
+  aws-region:
+    description: AWS region to configure credentials for.
+    required: false
+    default: us-east-2
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout Code
+      uses: actions/checkout@v7
+
+    - name: Setup Environment
+      shell: bash
+      run: make setup-env
+
+    - name: Configure AWS credentials (destroy role)
+      uses: aws-actions/configure-aws-credentials@v6
+      with:
+        role-to-assume: ${{ inputs.aws-role-to-assume }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Download saved destroy plan artifact
+      uses: actions/download-artifact@v7
+      with:
+        name: tfplan-destroy-${{ github.run_id }}
+        path: ${{ inputs.working-directory }}
+
+    - name: Apply destroy plan
+      shell: bash
+      run: make apply ENV=${{ inputs.environment }} INFRA_DIR=${{ inputs.working-directory }} PLAN_FILE=tfplan
