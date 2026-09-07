@@ -287,15 +287,18 @@ Flow:
    `vars.AWS_ROLE_ARN_PLAN`, runs `make plan` with `-destroy`, prints the
    plan, uploads a same-run artifact. Uses the same concurrency group as
    GitOps Deploy so plan/apply and destroy cannot overlap.
-3. `destroy` — `environment: <destroy-github-environment>` (default
-   `destroy`). This job waits for required reviewers. Assumes
-   `vars.AWS_ROLE_ARN_DESTROY` and runs `make apply PLAN_FILE=tfplan`.
+3. `destroy` — `environment: <environment>` (pass
+   `destroy-<env>` so state and the destroy role match the Terraform
+   environment; default is `destroy`). This job waits for required
+   reviewers. Assumes `vars.AWS_ROLE_ARN_DESTROY` and runs
+   `make apply PLAN_FILE=tfplan`.
 
 The consuming repo keeps a thin `workflow_dispatch` wrapper. OIDC roles are
 **not** destroyed here; they live in a separate Terraform root applied
 locally.
 
-Required GitHub Environment `destroy` (in addition to `<env>` used for plan):
+Required GitHub Environment `destroy-<env>` (in addition to `<env>` used
+for plan), e.g. `destroy-production`:
 
 - Required reviewers (configure in the GitHub UI; cannot be set from repo files)
 - Deployment branches restricted to `main` (recommended)
@@ -303,7 +306,7 @@ Required GitHub Environment `destroy` (in addition to `<env>` used for plan):
   `STATE_KEY` / `STATE_REGION` as the Terraform environment being destroyed
   (a job can only use one GitHub Environment)
 
-Do not put `AWS_ROLE_ARN_APPLY` on `destroy`, and do not put
+Do not put `AWS_ROLE_ARN_APPLY` on `destroy-<env>`, and do not put
 `AWS_ROLE_ARN_DESTROY` on `<env>`. No AWS access keys.
 
 The consumer Makefile must implement `make plan` (honors `TF_FLAGS` and
@@ -317,6 +320,11 @@ name: Destroy Application Infrastructure
 on:
   workflow_dispatch:
     inputs:
+      environment:
+        description: Terraform environment to destroy (must match environments/<env>/)
+        required: true
+        type: string
+        default: production
       confirmation:
         description: Type exactly DESTROY <project>/<environment>
         required: true
@@ -334,9 +342,9 @@ jobs:
       actions: write
     with:
       working-directory: infra
-      environment: production
+      environment: ${{ inputs.environment }}
       confirmation: ${{ inputs.confirmation }}
-      expected-confirmation: DESTROY example-app-infra/production
+      expected-confirmation: DESTROY example-app-infra/${{ inputs.environment }}
 ```
 
 No GitHub App secrets. Caller must grant `id-token: write` (OIDC),
