@@ -1,3 +1,8 @@
+## 5.1.2 (2026-09-07)
+
+
+- refactor: use same github env for plan and apply destroy (#94)
+
 ## 5.1.1 (2026-09-04)
 
 
