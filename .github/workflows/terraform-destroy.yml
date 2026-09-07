@@ -19,17 +19,10 @@ on:
       environment:
         description: >-
           Terraform environment / GitHub Environment used for the
-          destroy plan (e.g. "production"). Supplies STATE_* and
-          AWS_ROLE_ARN_PLAN.
+          destroy plan (e.g. "production") and apply. Supplies STATE_* and
+          AWS_ROLE_ARN_PLAN, and AWS_ROLE_ARN_DESTROY
         required: true
         type: string
-      destroy-github-environment:
-        description: >-
-          GitHub Environment used for the destroy apply job. Must
-          require reviewers. Supplies STATE_* and AWS_ROLE_ARN_DESTROY.
-        required: false
-        type: string
-        default: destroy
       confirmation:
         description: Caller-supplied confirmation string from workflow_dispatch.
         required: true
@@ -89,7 +82,7 @@ jobs:
     name: Destroy | ${{ inputs.environment }}
     needs: plan-destroy
     runs-on: ubuntu-latest
-    environment: ${{ inputs.destroy-github-environment }}
+    environment: ${{ inputs.environment }}
     concurrency:
       group: terraform-deploy-${{ github.repository }}-${{ inputs.environment }}
       cancel-in-progress: false
