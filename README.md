@@ -218,7 +218,8 @@ requested value, no branch or pull request is created.
 ```yaml
 uses: 24dlong/github-actions-library/actions/terraform/tfvars-bump-pr@v5
 with:
-  repository: my-org/frontend-infra
+  owner: my-org # optional, default is the calling repository's owner
+  repository: frontend-infra
   environment: production
   variable: image_uri # optional, default image_uri
   value: ${{ needs.publish.outputs.image-uri }}

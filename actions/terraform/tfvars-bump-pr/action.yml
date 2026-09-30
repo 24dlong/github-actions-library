@@ -8,8 +8,12 @@ description: >-
   created.
 
 inputs:
+  owner:
+    description: Owner (user or org) of the target repository. Defaults to the calling repository's owner.
+    required: false
+    default: ${{ github.repository_owner }}
   repository:
-    description: Target repository in owner/name form (e.g. "my-org/frontend-infra").
+    description: Name of the target repository, without the owner (e.g. "frontend-infra").
     required: true
   environment:
     description: Environment name, matching a directory under environments/ (e.g. "production").
@@ -48,35 +52,21 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Resolve target repository
-      id: target
-      shell: bash
-      env:
-        REPOSITORY: ${{ inputs.repository }}
-      run: |
-        set -euo pipefail
-        if [[ ! "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
-          echo "::error::repository must be in owner/name form, got '${REPOSITORY}'"
-          exit 1
-        fi
-        echo "owner=${REPOSITORY%%/*}" >> "$GITHUB_OUTPUT"
-        echo "name=${REPOSITORY#*/}" >> "$GITHUB_OUTPUT"
-
     - name: Create GitHub App Token
       id: app-token
       uses: actions/create-github-app-token@v3
       with:
         client-id: ${{ inputs.github-app-client-id }}
         private-key: ${{ inputs.github-app-private-key }}
-        owner: ${{ steps.target.outputs.owner }}
-        repositories: ${{ steps.target.outputs.name }}
+        owner: ${{ inputs.owner }}
+        repositories: ${{ inputs.repository }}
         permission-contents: write
         permission-pull-requests: write
 
     - name: Checkout target repository
       uses: actions/checkout@v7
       with:
-        repository: ${{ inputs.repository }}
+        repository: ${{ inputs.owner }}/${{ inputs.repository }}
         ref: ${{ inputs.base-branch }}
         token: ${{ steps.app-token.outputs.token }}
         path: .tfvars-bump-target
@@ -87,7 +77,7 @@ runs:
       working-directory: .tfvars-bump-target
       env:
         GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        GH_REPO: ${{ inputs.repository }}
+        GH_REPO: ${{ inputs.owner }}/${{ inputs.repository }}
         ENVIRONMENT: ${{ inputs.environment }}
         VARIABLE: ${{ inputs.variable }}
         VALUE: ${{ inputs.value }}
