@@ -1,3 +1,15 @@
+## 5.2.0 (2026-09-30)
+
+
+- feat: add ecr-publish and tfvars-bump-pr actions (#97)
+- * feat: add ecr-publish and tfvars-bump-pr actions
+- ecr-publish builds a single-platform, attestation-free image (Lambda-compatible) and pushes it to ECR via OIDC, outputting a digest-pinned image URI. tfvars-bump-pr opens an idempotent cross-repo PR setting one variable in environments/<env>/terraform.tfvars using a GitHub App token.
+- Co-authored-by: Cursor <cursoragent@cursor.com>
+- * refactor: split tfvars-bump-pr target into owner and repository inputs
+- Co-authored-by: Cursor <cursoragent@cursor.com>
+- ---------
+- Co-authored-by: Cursor <cursoragent@cursor.com>
+
 ## 5.1.4 (2026-09-30)
 
 
