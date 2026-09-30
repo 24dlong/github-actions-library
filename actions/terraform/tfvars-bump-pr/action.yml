@@ -1,0 +1,164 @@
+name: Bump tfvars Variable
+description: >-
+  Opens (or reuses) a pull request in a Terraform GitOps repository that sets a
+  single string variable in environments/<environment>/terraform.tfvars (e.g.
+  image_uri after publishing a new container image). The target repository may
+  be different from, and owned by a different org than, the calling repository.
+  Idempotent: if the variable already has the requested value, no branch/PR is
+  created.
+
+inputs:
+  owner:
+    description: Owner (user or org) of the target repository. Defaults to the calling repository's owner.
+    required: false
+    default: ${{ github.repository_owner }}
+  repository:
+    description: Name of the target repository, without the owner (e.g. "frontend-infra").
+    required: true
+  environment:
+    description: Environment name, matching a directory under environments/ (e.g. "production").
+    required: true
+  variable:
+    description: Name of the Terraform variable to set.
+    required: false
+    default: image_uri
+  value:
+    description: New string value for the variable.
+    required: true
+  github-app-client-id:
+    description: >-
+      Client Id of a GitHub App installed on the target repository with
+      contents and pull request write permissions.
+    required: true
+  github-app-private-key:
+    description: Private key of the GitHub App.
+    required: true
+  base-branch:
+    description: Branch of the target repository the pull request should target.
+    required: false
+    default: main
+
+outputs:
+  pr-number:
+    description: Number of the created (or already-open) pull request. Empty if no change was needed.
+    value: ${{ steps.pr.outputs.pr_number }}
+  pr-url:
+    description: URL of the created (or already-open) pull request. Empty if no change was needed.
+    value: ${{ steps.pr.outputs.pr_url }}
+  branch-name:
+    description: Name of the pull request branch. Empty if no change was needed.
+    value: ${{ steps.pr.outputs.branch_name }}
+
+runs:
+  using: composite
+  steps:
+    - name: Create GitHub App Token
+      id: app-token
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.github-app-client-id }}
+        private-key: ${{ inputs.github-app-private-key }}
+        owner: ${{ inputs.owner }}
+        repositories: ${{ inputs.repository }}
+        permission-contents: write
+        permission-pull-requests: write
+
+    - name: Checkout target repository
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.owner }}/${{ inputs.repository }}
+        ref: ${{ inputs.base-branch }}
+        token: ${{ steps.app-token.outputs.token }}
+        path: .tfvars-bump-target
+
+    - name: Update tfvars and open pull request
+      id: pr
+      shell: bash
+      working-directory: .tfvars-bump-target
+      env:
+        GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        GH_REPO: ${{ inputs.owner }}/${{ inputs.repository }}
+        ENVIRONMENT: ${{ inputs.environment }}
+        VARIABLE: ${{ inputs.variable }}
+        VALUE: ${{ inputs.value }}
+        BASE_BRANCH: ${{ inputs.base-branch }}
+      run: |
+        set -euo pipefail
+
+        if [[ ! "$VARIABLE" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]; then
+          echo "::error::variable must be a valid Terraform identifier, got '${VARIABLE}'"
+          exit 1
+        fi
+        if [[ "$VALUE" == *'"'* || "$VALUE" == *'\'* || "$VALUE" == *$'\n'* ]]; then
+          echo "::error::value must not contain double quotes, backslashes, or newlines"
+          exit 1
+        fi
+
+        TFVARS_FILE="environments/${ENVIRONMENT}/terraform.tfvars"
+        if [ ! -f "$TFVARS_FILE" ]; then
+          echo "::error::${TFVARS_FILE} does not exist in ${GH_REPO}@${BASE_BRANCH}"
+          exit 1
+        fi
+
+        # Replaces only the text after "=" so terraform fmt alignment is preserved.
+        awk '
+          BEGIN { var = ENVIRON["VARIABLE"]; val = ENVIRON["VALUE"]; done = 0 }
+          !done && $0 ~ ("^[[:space:]]*" var "[[:space:]]*=") {
+            print substr($0, 1, index($0, "=")) " \"" val "\""
+            done = 1
+            next
+          }
+          { print }
+          END { if (!done) print var " = \"" val "\"" }
+        ' "$TFVARS_FILE" > "${TFVARS_FILE}.tmp"
+        mv "${TFVARS_FILE}.tmp" "$TFVARS_FILE"
+
+        if git diff --quiet -- "$TFVARS_FILE"; then
+          echo "${VARIABLE} in ${TFVARS_FILE} is already ${VALUE}. Nothing to do."
+          echo "pr_number=" >> "$GITHUB_OUTPUT"
+          echo "pr_url=" >> "$GITHUB_OUTPUT"
+          echo "branch_name=" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        VALUE_HASH="$(printf '%s' "$VALUE" | sha256sum | cut -c1-12)"
+        BRANCH_NAME="bump/${ENVIRONMENT}/${VARIABLE}/${VALUE_HASH}"
+
+        EXISTING_PR_NUMBER="$(gh pr list --head "$BRANCH_NAME" --base "$BASE_BRANCH" --state open --json number --jq '.[0].number // empty')"
+        if [ -n "$EXISTING_PR_NUMBER" ]; then
+          echo "Pull request #${EXISTING_PR_NUMBER} already open for ${BRANCH_NAME}."
+          EXISTING_PR_URL="$(gh pr view "$EXISTING_PR_NUMBER" --json url --jq '.url')"
+          echo "pr_number=${EXISTING_PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "pr_url=${EXISTING_PR_URL}" >> "$GITHUB_OUTPUT"
+          echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        git checkout -b "$BRANCH_NAME"
+        git add "$TFVARS_FILE"
+        git commit -m "chore(deploy): bump ${ENVIRONMENT} ${VARIABLE}"
+        # The branch is owned by this action; a leftover from a failed run is safe to replace.
+        git push --force origin "$BRANCH_NAME"
+
+        PR_URL="$(gh pr create \
+          --base "$BASE_BRANCH" \
+          --head "$BRANCH_NAME" \
+          --title "Bump ${ENVIRONMENT} ${VARIABLE}" \
+          --body "Sets \`${VARIABLE}\` in \`${TFVARS_FILE}\` to:
+
+        \`\`\`
+        ${VALUE}
+        \`\`\`
+
+        Opened automatically by [this workflow run](${RUN_URL}) in \`${GITHUB_REPOSITORY}\` at \`${GITHUB_SHA}\`.")"
+
+        PR_NUMBER="$(gh pr view "$PR_URL" --json number --jq '.number')"
+
+        echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+        echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
+        echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"

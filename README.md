@@ -96,6 +96,42 @@ with:
 The token must be able to bypass branch protection on the target branch (e.g. a
 personal access token or GitHub App installation token).
 
+### Actions for Container Images
+#### Publish Image to ECR
+Builds a single-platform image with Docker Buildx and pushes it to Amazon ECR using
+GitHub OIDC. Outputs the pushed `digest` and a digest-pinned `image-uri`
+(`<repository>@sha256:...`) to hand to Terraform, so deployments never follow a mutable
+tag.
+
+```yaml
+- uses: 24dlong/github-actions-library/actions/docker/publish@v5
+  id: publish
+  with:
+    aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_ECR_PUSH }}
+    aws-region: us-east-2
+    ecr-repository-uri: ${{ vars.ECR_REPOSITORY_URI }}
+    dockerfile: apps/web/Dockerfile
+    context: .
+    platform: linux/arm64 # optional, default linux/arm64
+    image-tag: ${{ github.sha }} # optional, default github.sha
+    secrets: | # optional
+      npm_token=${{ steps.token.outputs.token }}
+```
+
+The calling job needs `permissions: id-token: write`. The image is pushed without
+provenance/SBOM attestations because AWS Lambda rejects the resulting OCI image index;
+this also means `platform` must be a single platform. Build `linux/arm64` images on an
+arm64 runner (e.g. `ubuntu-24.04-arm`) to avoid slow QEMU emulation. Layer cache uses the
+GitHub Actions cache (`type=gha`).
+
+`secrets` are BuildKit secrets (`id=value` per line), consumed in the Dockerfile with
+`RUN --mount=type=secret,id=<id>`; they are never written to image layers. Mask any
+value you generate in an earlier step with `::add-mask::`.
+
+The role needs `ecr:GetAuthorizationToken` plus, scoped to the repository,
+`ecr:BatchCheckLayerAvailability`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`,
+`ecr:CompleteLayerUpload`, `ecr:PutImage`, and `ecr:BatchGetImage`.
+
 ### Actions for Terraform Repositories
 #### Terraform Plan
 Runs `terraform plan` for a given root module, comments the rendered plan on the pull
@@ -171,6 +207,35 @@ action creates `deployed.json` inside it if it doesn't exist yet). `github-token
 be able to bypass branch protection on `base-branch` (e.g. a personal access token or
 GitHub App installation token) so it can push the deployment branch and open the pull
 request.
+
+#### Terraform tfvars Bump Pull Request
+Opens (or reuses) a pull request in a Terraform GitOps repository that sets one string
+variable in `environments/<environment>/terraform.tfvars` — typically `image_uri` after
+an application repository publishes a new container image. The target repository can
+live in a different org than the caller. Idempotent: if the variable already has the
+requested value, no branch or pull request is created.
+
+```yaml
+uses: 24dlong/github-actions-library/actions/terraform/tfvars-bump-pr@v5
+with:
+  owner: my-org # optional, default is the calling repository's owner
+  repository: frontend-infra
+  environment: production
+  variable: image_uri # optional, default image_uri
+  value: ${{ needs.publish.outputs.image-uri }}
+  github-app-client-id: ${{ vars.GH_WORKFLOWS_APP_CLIENT_ID }}
+  github-app-private-key: ${{ secrets.GH_WORKFLOWS_APP_PRIVATE_KEY }}
+```
+
+The GitHub App must be installed on the target repository with contents and pull request
+write permissions. The action only rewrites the text after `=` on the matching line (so
+`terraform fmt` alignment is kept) and appends the variable if it is absent; it fails if
+the tfvars file does not exist. The target is checked out into `.tfvars-bump-target/`, so
+the caller's workspace is untouched.
+
+Merging the pull request only changes tfvars. Deploying it still goes through the target
+repository's own GitOps trigger (`environments/<env>/deployed.json`), so that repository's
+merge workflow must request a deployment when tfvars change.
 
 #### Terraform GitOps Deploy
 Reusable workflow that detects which `environments/<env>/deployed.json` files
