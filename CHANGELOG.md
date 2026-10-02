@@ -1,3 +1,9 @@
+## 6.0.1 (2026-10-02)
+
+
+- chore: bump internal workflows to v6 (#99)
+- Co-authored-by: Cursor <cursoragent@cursor.com>
+
 ## 6.0.0 (2026-10-02)
 
 
