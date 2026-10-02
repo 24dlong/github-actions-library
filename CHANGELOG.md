@@ -1,3 +1,27 @@
+## 6.0.0 (2026-10-02)
+
+
+- feat!: add nextjs pipelines and centralize CodeArtifact auth (#98)
+- * feat!: add nextjs pipelines and centralize CodeArtifact auth
+- - add actions/aws/codeartifact-token; setup-no-install exports CODEARTIFACT_AUTH_TOKEN
+- docker/publish: optional CodeArtifact inputs and image-tag output
+- javascript/publish: released and version outputs; library/publish wraps it
+- add actions/nextjs/quality-gate and actions/nextjs/publish
+- add reusable nextjs-pull-request.yml and nextjs-publish.yml workflows
+- move internal action references to @v6
+- BREAKING CHANGE: javascript/expo/quality-gate only runs Expo checks and no longer runs the base quality gate. tfvars-bump-pr defaults variable to image_tag.
+- Co-authored-by: Cursor <cursoragent@cursor.com>
+- * refactor!: kebab-case inputs with service-prefixed AWS names
+- - every action input is kebab-case
+- CodeArtifact inputs are codeartifact-*; docker/publish ECR inputs are ecr-*
+  (ecr-aws-region defaults to the region in ecr-repository-uri)
+- setup-no-install exports the registry env vars once; drop duplicated env blocks
+- expo-upgrade declares the github-app-private-key input it already used
+- BREAKING CHANGE: action inputs are renamed; see the v6 migration table in the README.
+- Co-authored-by: Cursor <cursoragent@cursor.com>
+- ---------
+- Co-authored-by: Cursor <cursoragent@cursor.com>
+
 ## 5.2.0 (2026-09-30)
 
 
