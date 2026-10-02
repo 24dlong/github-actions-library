@@ -1,7 +1,7 @@
 # Reusable pull request quality gate for Next.js application repositories.
 # Not run in this repository: on.workflow_call only.
 #
-# Reads these caller repository variables:
+# Reads these caller repository variables (all CodeArtifact):
 #   AWS_CODE_ARTIFACT_ACCOUNT_ID, AWS_REGION, AWS_ROLE_TO_ASSUME,
 #   AWS_CODE_ARTIFACT_DOMAIN, AWS_CODE_ARTIFACT_REPOSITORY, REGISTRY_NAMESPACE
 #
@@ -30,12 +30,12 @@ jobs:
     steps:
       - uses: 24dlong/github-actions-library/actions/nextjs/quality-gate@v6
         with:
-          AWS_ACCOUNT_ID: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
-          AWS_CODE_ARTIFACT_DOMAIN: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
-          AWS_CODE_ARTIFACT_REPOSITORY: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
-          REGISTRY_NAMESPACE: ${{ vars.REGISTRY_NAMESPACE }}
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
 
   expo:
     name: Quality Gate | Expo
@@ -48,9 +48,9 @@ jobs:
       - uses: 24dlong/github-actions-library/actions/javascript/expo/quality-gate@v6
         with:
           working-directory: ${{ inputs.expo-working-directory }}
-          AWS_ACCOUNT_ID: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
-          AWS_CODE_ARTIFACT_DOMAIN: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
-          AWS_CODE_ARTIFACT_REPOSITORY: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
-          REGISTRY_NAMESPACE: ${{ vars.REGISTRY_NAMESPACE }}
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}

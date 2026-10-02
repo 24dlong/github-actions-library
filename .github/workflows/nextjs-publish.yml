@@ -9,7 +9,9 @@
 # Reads these caller repository (or GitHub Environment) variables:
 #   CodeArtifact: AWS_CODE_ARTIFACT_ACCOUNT_ID, AWS_REGION, AWS_ROLE_TO_ASSUME,
 #     AWS_CODE_ARTIFACT_DOMAIN, AWS_CODE_ARTIFACT_REPOSITORY, REGISTRY_NAMESPACE
-#   Image: AWS_ROLE_ARN_ECR_PUSH, ECR_REPOSITORY_URI
+#   ECR (may be a different AWS account/region than CodeArtifact):
+#     ECR_REPOSITORY_URI (its account and region are where the image is pushed),
+#     AWS_ROLE_ARN_ECR_PUSH
 #   Deployment: INFRA_REPOSITORY_OWNER, INFRA_REPOSITORY_NAME,
 #     GH_WORKFLOWS_APP_CLIENT_ID
 #
@@ -82,13 +84,13 @@ jobs:
         id: publish
         uses: 24dlong/github-actions-library/actions/javascript/publish@v6
         with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          AWS_ACCOUNT_ID: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
-          AWS_CODE_ARTIFACT_DOMAIN: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
-          AWS_CODE_ARTIFACT_REPOSITORY: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
-          REGISTRY_NAMESPACE: ${{ vars.REGISTRY_NAMESPACE }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
 
   publish:
     name: Publish
@@ -107,16 +109,16 @@ jobs:
           context: ${{ inputs.context }}
           platform: ${{ inputs.platform }}
           build-args: ${{ inputs.build-args }}
-          aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_ECR_PUSH }}
           ecr-repository-uri: ${{ vars.ECR_REPOSITORY_URI }}
+          ecr-aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_ECR_PUSH }}
           infra-repository-owner: ${{ vars.INFRA_REPOSITORY_OWNER }}
           infra-repository: ${{ vars.INFRA_REPOSITORY_NAME }}
           environment: ${{ inputs.environment }}
           github-app-client-id: ${{ vars.GH_WORKFLOWS_APP_CLIENT_ID }}
           github-app-private-key: ${{ secrets.github-app-private-key }}
-          AWS_ACCOUNT_ID: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
-          AWS_CODE_ARTIFACT_DOMAIN: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
-          AWS_CODE_ARTIFACT_REPOSITORY: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
-          REGISTRY_NAMESPACE: ${{ vars.REGISTRY_NAMESPACE }}
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}

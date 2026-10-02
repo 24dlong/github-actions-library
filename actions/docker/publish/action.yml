@@ -3,21 +3,24 @@ description: >-
   Builds a single-platform container image with Docker Buildx and pushes it to
   an Amazon ECR repository using GitHub OIDC credentials. Optionally fetches an
   AWS CodeArtifact token for the build so private packages can be installed.
-  Outputs the pushed tag, the image digest, and a digest-pinned image URI.
+  ECR and CodeArtifact are configured separately and may live in different AWS
+  accounts and regions. Outputs the pushed tag, the image digest, and a
+  digest-pinned image URI.
 
 inputs:
-  aws-role-to-assume:
-    description: ARN of the AWS IAM role to assume. Must allow pushing to the ECR repository.
-    required: true
-  aws-region:
-    description: AWS region hosting the ECR repository.
-    required: false
-    default: us-east-2
   ecr-repository-uri:
     description: >-
       Full ECR repository URI without a tag
-      (e.g. 123456789012.dkr.ecr.us-east-2.amazonaws.com/my-app).
+      (e.g. 123456789012.dkr.ecr.us-east-2.amazonaws.com/my-app). Its account
+      is the account the image is pushed to.
     required: true
+  ecr-aws-role-to-assume:
+    description: ARN of the AWS IAM role allowed to push to the ECR repository.
+    required: true
+  ecr-aws-region:
+    description: AWS region of the ECR repository. Defaults to the region in ecr-repository-uri.
+    required: false
+    default: ""
   dockerfile:
     description: Path to the Dockerfile, relative to the repository root.
     required: false
@@ -48,32 +51,33 @@ inputs:
     description: Newline-separated build arguments in KEY=value form.
     required: false
     default: ""
-  AWS_ACCOUNT_ID:
-    description: AWS Account ID hosting CodeArtifact. Required when AWS_CODE_ARTIFACT_DOMAIN is set.
-    required: false
-    default: ""
-  AWS_REGION:
-    description: AWS region hosting CodeArtifact. Defaults to aws-region.
-    required: false
-    default: ""
-  AWS_ROLE_TO_ASSUME:
-    description: AWS role to assume for CodeArtifact repository access. Required when AWS_CODE_ARTIFACT_DOMAIN is set.
-    required: false
-    default: ""
-  AWS_CODE_ARTIFACT_DOMAIN:
+  codeartifact-domain:
     description: >-
-      AWS CodeArtifact domain. When set, a CodeArtifact token is passed to the
-      build as the `codeartifact_token` BuildKit secret, and AWS_REGION,
-      AWS_ACCOUNT_ID, AWS_CODE_ARTIFACT_DOMAIN, AWS_CODE_ARTIFACT_REPOSITORY and
-      REGISTRY_NAMESPACE are passed as build args.
+      CodeArtifact domain name. Optional: when set, a CodeArtifact token is
+      passed to the build as the `codeartifact_token` BuildKit secret, and
+      AWS_REGION, AWS_ACCOUNT_ID, AWS_CODE_ARTIFACT_DOMAIN,
+      AWS_CODE_ARTIFACT_REPOSITORY and REGISTRY_NAMESPACE (the CodeArtifact
+      values) are passed as build args. All other codeartifact-* inputs are then required.
     required: false
     default: ""
-  AWS_CODE_ARTIFACT_REPOSITORY:
-    description: AWS CodeArtifact repository.
+  codeartifact-aws-account-id:
+    description: AWS account ID that owns the CodeArtifact domain.
     required: false
     default: ""
-  REGISTRY_NAMESPACE:
-    description: Namespace to use for registry authentication.
+  codeartifact-aws-region:
+    description: AWS region of the CodeArtifact domain.
+    required: false
+    default: ""
+  codeartifact-aws-role-to-assume:
+    description: ARN of the AWS IAM role allowed to call codeartifact:GetAuthorizationToken.
+    required: false
+    default: ""
+  codeartifact-repository:
+    description: CodeArtifact repository name.
+    required: false
+    default: ""
+  codeartifact-registry-namespace:
+    description: npm scope served by CodeArtifact (e.g. "@my-org").
     required: false
     default: ""
 
@@ -94,15 +98,53 @@ runs:
     - name: Checkout Code
       uses: actions/checkout@v7
 
+    - name: Validate inputs
+      id: validate
+      shell: bash
+      env:
+        ECR_REPOSITORY_URI: ${{ inputs.ecr-repository-uri }}
+        ECR_AWS_REGION: ${{ inputs.ecr-aws-region }}
+        CA_DOMAIN: ${{ inputs.codeartifact-domain }}
+        CA_ACCOUNT_ID: ${{ inputs.codeartifact-aws-account-id }}
+        CA_REGION: ${{ inputs.codeartifact-aws-region }}
+        CA_ROLE: ${{ inputs.codeartifact-aws-role-to-assume }}
+        CA_REPOSITORY: ${{ inputs.codeartifact-repository }}
+        CA_NAMESPACE: ${{ inputs.codeartifact-registry-namespace }}
+      run: |
+        set -euo pipefail
+        region="$ECR_AWS_REGION"
+        if [[ -z "$region" ]]; then
+          if [[ "$ECR_REPOSITORY_URI" =~ ^[0-9]{12}\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com/ ]]; then
+            region="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Could not read the region from ecr-repository-uri '${ECR_REPOSITORY_URI}'. Set ecr-aws-region."
+            exit 1
+          fi
+        fi
+        echo "ecr-aws-region=${region}" >> "$GITHUB_OUTPUT"
+
+        if [[ -n "$CA_DOMAIN" ]]; then
+          missing=()
+          [[ -n "$CA_ACCOUNT_ID" ]] || missing+=(codeartifact-aws-account-id)
+          [[ -n "$CA_REGION" ]] || missing+=(codeartifact-aws-region)
+          [[ -n "$CA_ROLE" ]] || missing+=(codeartifact-aws-role-to-assume)
+          [[ -n "$CA_REPOSITORY" ]] || missing+=(codeartifact-repository)
+          [[ -n "$CA_NAMESPACE" ]] || missing+=(codeartifact-registry-namespace)
+          if (( ${#missing[@]} )); then
+            echo "::error::codeartifact-domain is set, so these inputs are required: ${missing[*]}"
+            exit 1
+          fi
+        fi
+
     - name: Get CodeArtifact Token
       id: codeartifact
-      if: inputs.AWS_CODE_ARTIFACT_DOMAIN != ''
+      if: inputs.codeartifact-domain != ''
       uses: 24dlong/github-actions-library/actions/aws/codeartifact-token@v6
       with:
-        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
-        AWS_REGION: ${{ inputs.AWS_REGION || inputs.aws-region }}
-        AWS_ROLE_TO_ASSUME: ${{ inputs.AWS_ROLE_TO_ASSUME }}
-        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
+        codeartifact-aws-account-id: ${{ inputs.codeartifact-aws-account-id }}
+        codeartifact-aws-region: ${{ inputs.codeartifact-aws-region }}
+        codeartifact-aws-role-to-assume: ${{ inputs.codeartifact-aws-role-to-assume }}
+        codeartifact-domain: ${{ inputs.codeartifact-domain }}
 
     - name: Assemble build inputs
       id: inputs
@@ -111,11 +153,11 @@ runs:
         SECRETS: ${{ inputs.secrets }}
         BUILD_ARGS: ${{ inputs.build-args }}
         CODEARTIFACT_TOKEN: ${{ steps.codeartifact.outputs.token }}
-        CA_REGION: ${{ inputs.AWS_REGION || inputs.aws-region }}
-        CA_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
-        CA_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
-        CA_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
-        CA_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
+        CA_DOMAIN: ${{ inputs.codeartifact-domain }}
+        CA_ACCOUNT_ID: ${{ inputs.codeartifact-aws-account-id }}
+        CA_REGION: ${{ inputs.codeartifact-aws-region }}
+        CA_REPOSITORY: ${{ inputs.codeartifact-repository }}
+        CA_NAMESPACE: ${{ inputs.codeartifact-registry-namespace }}
       run: |
         set -euo pipefail
         if [[ -n "$CA_DOMAIN" ]]; then
@@ -133,11 +175,11 @@ runs:
           echo "${delimiter}"
         } >> "$GITHUB_OUTPUT"
 
-    - name: Configure AWS credentials
+    - name: Configure AWS Credentials (ECR)
       uses: aws-actions/configure-aws-credentials@v6
       with:
-        role-to-assume: ${{ inputs.aws-role-to-assume }}
-        aws-region: ${{ inputs.aws-region }}
+        role-to-assume: ${{ inputs.ecr-aws-role-to-assume }}
+        aws-region: ${{ steps.validate.outputs.ecr-aws-region }}
 
     - name: Login to Amazon ECR
       uses: aws-actions/amazon-ecr-login@v2

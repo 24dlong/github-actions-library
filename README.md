@@ -4,13 +4,36 @@ A collection of reusable GitHub Actions for various technologies, designed for r
 
 ## Migrating from v5 to v6
 
+- **All action inputs are kebab-case.** AWS inputs are prefixed with the service they
+  configure, because CodeArtifact and ECR can live in different AWS accounts:
+
+  | v5 input | v6 input |
+  | --- | --- |
+  | `AWS_ACCOUNT_ID` | `codeartifact-aws-account-id` |
+  | `AWS_REGION` | `codeartifact-aws-region` |
+  | `AWS_ROLE_TO_ASSUME` | `codeartifact-aws-role-to-assume` |
+  | `AWS_CODE_ARTIFACT_DOMAIN` | `codeartifact-domain` |
+  | `AWS_CODE_ARTIFACT_REPOSITORY` | `codeartifact-repository` |
+  | `REGISTRY_NAMESPACE` | `codeartifact-registry-namespace` |
+  | `GITHUB_TOKEN` (javascript/publish, library/publish, commit) | `github-token` |
+  | `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_SLUG` | `github-app-client-id`, `github-app-private-key`, `github-app-slug` |
+  | `GITHUB_WORKFLOWS_CLIENT_ID`, `GITHUB_WORKFLOWS_PRIVATE_KEY` (publish) | `github-app-client-id`, `github-app-private-key` |
+  | `CHROMATIC_PROJECT_TOKEN` | `chromatic-project-token` |
+  | `STORYBOOK_TARGET`, `AUTOMATION_BRANCH`, `BASE_BRANCH` | `storybook-target`, `automation-branch`, `base-branch` |
+  | `BRANCH`, `COMMIT_MESSAGE` (commit) | `branch`, `commit-message` |
+  | `aws-role-to-assume`, `aws-region` (docker/publish) | `ecr-aws-role-to-assume`, `ecr-aws-region` (optional, defaults to the region in `ecr-repository-uri`) |
+
+  Environment variables exported to `make` (`AWS_ACCOUNT_ID`, `AWS_CODE_ARTIFACT_*`,
+  `REGISTRY_NAMESPACE`, `GITHUB_TOKEN`) keep their names.
 - `actions/javascript/expo/quality-gate` no longer runs the base JavaScript Quality Gate.
   Run `actions/javascript/quality-gate` and `actions/javascript/expo/quality-gate` as
   separate jobs. Use `working-directory` when the Expo app isn't at the repository root.
 - `actions/terraform/tfvars-bump-pr` now defaults `variable` to `image_tag` (was
   `image_uri`).
-- The JavaScript setup actions now export `CODEARTIFACT_AUTH_TOKEN`. Registry auth
-  scripts that already call `aws codeartifact login` keep working.
+- The JavaScript setup actions now export `CODEARTIFACT_AUTH_TOKEN`, `AWS_ACCOUNT_ID`,
+  `AWS_CODE_ARTIFACT_DOMAIN`, `AWS_CODE_ARTIFACT_REPOSITORY` and `REGISTRY_NAMESPACE` to
+  the job environment. Registry auth scripts that already call `aws codeartifact login`
+  keep working.
 - New: `actions/aws/codeartifact-token`, `actions/nextjs/*`, and the
   `nextjs-pull-request.yml` / `nextjs-publish.yml` reusable workflows.
   `actions/docker/publish` gains optional CodeArtifact inputs and an `image-tag` output.
@@ -33,15 +56,24 @@ Requires a Makefile with the following commands implemented:
 
 ```yaml
 uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v6
+with:
+  codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+  codeartifact-aws-region: ${{ vars.AWS_REGION }}
+  codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+  codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+  codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+  codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
 ```
+
+Every JavaScript action takes these six `codeartifact-*` inputs; they are omitted from
+the examples below.
 
 #### Expo Quality Gate
 Runs Expo-specific checks (currently Expo Doctor) for the Expo project in
 `working-directory`. It checks out and installs dependencies itself and does **not** run
 the base Quality Gate, so run it as a separate job next to it.
 
-Requires `make setup-env` and `make install`, plus the same AWS inputs as the base
-Quality Gate action.
+Requires `make setup-env` and `make install`.
 
 ```yaml
 uses: 24dlong/github-actions-library/actions/javascript/expo/quality-gate@v6
@@ -54,7 +86,7 @@ Executes the quality gate action and executes a publish command if checks pass.
 ```yaml
 uses: 24dlong/github-actions-library/actions/javascript/publish@v6
 with:
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 In addition to the Makefile requirements for the Quality Gate action, a `make publish`
@@ -70,12 +102,7 @@ around Publish with the same inputs and outputs.
 ```yaml
 uses: 24dlong/github-actions-library/actions/javascript/library/publish@v6
 with:
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  AWS_ACCOUNT_ID: "your-account-id"
-  AWS_REGION: "your-region"
-  AWS_ROLE_TO_ASSUME: "your-role"
-  AWS_CODE_ARTIFACT_DOMAIN: "your-domain"
-  AWS_CODE_ARTIFACT_REPOSITORY: "your-repository"
+  github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 In addition to the Makefile requirements for the Quality Gate action, a `make publish`
@@ -84,10 +111,13 @@ command should also publish the library to CodeArtifact. The action handles auth
 
 ### CodeArtifact Authentication
 The JavaScript setup actions (and therefore every JavaScript action above) assume
-`AWS_ROLE_TO_ASSUME` and export a CodeArtifact token as `CODEARTIFACT_AUTH_TOKEN`. The
-consumer's registry auth script (run by `make install`) should configure npm from that
-variable when it is set, and fall back to `aws codeartifact login` locally. The AWS
-credentials stay in the job environment for later steps.
+`codeartifact-aws-role-to-assume` and export these variables to the job environment:
+`CODEARTIFACT_AUTH_TOKEN`, `AWS_ACCOUNT_ID`, `AWS_CODE_ARTIFACT_DOMAIN`,
+`AWS_CODE_ARTIFACT_REPOSITORY`, `REGISTRY_NAMESPACE`, and (from the credentials step)
+`AWS_REGION`. The consumer's registry auth script (run by `make install`) should configure
+npm from `CODEARTIFACT_AUTH_TOKEN` when it is set, and fall back to
+`aws codeartifact login` locally. The AWS credentials stay in the job environment for
+later steps.
 
 To fetch a token directly:
 
@@ -95,10 +125,10 @@ To fetch a token directly:
 - uses: 24dlong/github-actions-library/actions/aws/codeartifact-token@v6
   id: codeartifact
   with:
-    AWS_ACCOUNT_ID: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
-    AWS_REGION: ${{ vars.AWS_REGION }}
-    AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
-    AWS_CODE_ARTIFACT_DOMAIN: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+    codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+    codeartifact-aws-region: ${{ vars.AWS_REGION }}
+    codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+    codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
 # ${{ steps.codeartifact.outputs.token }} is masked in logs
 ```
 
@@ -117,8 +147,8 @@ Both workflows read these caller repository (or GitHub Environment) variables:
 
 | Variable | Used by | Purpose |
 | --- | --- | --- |
-| `AWS_CODE_ARTIFACT_ACCOUNT_ID`, `AWS_REGION`, `AWS_ROLE_TO_ASSUME`, `AWS_CODE_ARTIFACT_DOMAIN`, `AWS_CODE_ARTIFACT_REPOSITORY`, `REGISTRY_NAMESPACE` | both | CodeArtifact install and the Docker build |
-| `AWS_ROLE_ARN_ECR_PUSH`, `ECR_REPOSITORY_URI` | publish | Image push |
+| `AWS_CODE_ARTIFACT_ACCOUNT_ID`, `AWS_REGION`, `AWS_ROLE_TO_ASSUME`, `AWS_CODE_ARTIFACT_DOMAIN`, `AWS_CODE_ARTIFACT_REPOSITORY`, `REGISTRY_NAMESPACE` | both | CodeArtifact only: installs and the Docker build's private packages |
+| `ECR_REPOSITORY_URI`, `AWS_ROLE_ARN_ECR_PUSH` | publish | ECR only: image push. The URI's account and region can differ from CodeArtifact's. |
 | `INFRA_REPOSITORY_OWNER`, `INFRA_REPOSITORY_NAME`, `GH_WORKFLOWS_APP_CLIENT_ID` | publish | `image_tag` bump pull request |
 
 #### Next.js Pull Request
@@ -209,11 +239,12 @@ commit (any commit message starting with `bump:`), to avoid retriggering itself.
 ```yaml
 uses: 24dlong/github-actions-library/actions/publish@v6
 with:
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  github-app-client-id: ${{ vars.GH_WORKFLOWS_APP_CLIENT_ID }}
+  github-app-private-key: ${{ secrets.GH_WORKFLOWS_APP_PRIVATE_KEY }}
 ```
 
-The token must be able to bypass branch protection on the target branch (e.g. a
-personal access token or GitHub App installation token).
+The GitHub App must be able to bypass branch protection on the target branch, push
+commits, and create tags.
 
 ### Actions for Container Images
 #### Publish Image to ECR
@@ -226,28 +257,34 @@ GitHub OIDC. Outputs the pushed `image-tag`, its `digest`, and a digest-pinned
 - uses: 24dlong/github-actions-library/actions/docker/publish@v6
   id: publish
   with:
-    aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_ECR_PUSH }}
-    aws-region: us-east-2
+    # ECR: where the image is pushed
     ecr-repository-uri: ${{ vars.ECR_REPOSITORY_URI }}
+    ecr-aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_ECR_PUSH }}
+    ecr-aws-region: us-east-2 # optional, default is the region in ecr-repository-uri
     dockerfile: apps/web/Dockerfile
     context: .
     platform: linux/arm64 # optional, default linux/arm64
     image-tag: 1.2.3 # optional, default github.sha
     secrets: | # optional
       other_secret=${{ steps.other.outputs.value }}
-    # optional: CodeArtifact auth for the build
-    AWS_ACCOUNT_ID: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
-    AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
-    AWS_CODE_ARTIFACT_DOMAIN: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
-    AWS_CODE_ARTIFACT_REPOSITORY: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
-    REGISTRY_NAMESPACE: ${{ vars.REGISTRY_NAMESPACE }}
+    # CodeArtifact (optional): where the build installs private packages from
+    codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+    codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+    codeartifact-aws-region: ${{ vars.AWS_REGION }}
+    codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+    codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+    codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
 ```
 
-When `AWS_CODE_ARTIFACT_DOMAIN` is set, the action fetches a CodeArtifact token
-(`AWS_REGION` defaults to `aws-region`) and adds it to the build as the
-`codeartifact_token` BuildKit secret. It also passes `AWS_REGION`, `AWS_ACCOUNT_ID`,
-`AWS_CODE_ARTIFACT_DOMAIN`, `AWS_CODE_ARTIFACT_REPOSITORY` and `REGISTRY_NAMESPACE` as
-build args. Consume them in the Dockerfile with
+ECR and CodeArtifact are configured independently, so they can be in different AWS
+accounts and regions. The `ecr-*` inputs are only used to push the image; the
+`codeartifact-*` inputs are only used to fetch a token for the build.
+
+When `codeartifact-domain` is set, the other `codeartifact-*` inputs are required. The
+action fetches a CodeArtifact token and adds it to the build as the `codeartifact_token`
+BuildKit secret. It also passes the CodeArtifact values as the build args `AWS_REGION`,
+`AWS_ACCOUNT_ID`, `AWS_CODE_ARTIFACT_DOMAIN`, `AWS_CODE_ARTIFACT_REPOSITORY` and
+`REGISTRY_NAMESPACE`. Consume them in the Dockerfile with
 `RUN --mount=type=secret,id=codeartifact_token,env=CODEARTIFACT_AUTH_TOKEN ...`.
 
 The calling job needs `permissions: id-token: write`. The image is pushed without

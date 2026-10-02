@@ -6,11 +6,11 @@ description: >-
   triggered by its own version-bump commit, to avoid retriggering itself.
 
 inputs:
-  GITHUB_WORKFLOWS_CLIENT_ID:
+  github-app-client-id:
     description: >-
       The client ID of a GitHub App with permissions to bypass branch protection, push commits, and create tags.
     required: true
-  GITHUB_WORKFLOWS_PRIVATE_KEY:
+  github-app-private-key:
     description: >-
       The private key of a GitHub App with permissions to bypass branch protection, push commits, and create tags.
     required: true
@@ -27,8 +27,8 @@ runs:
       uses: actions/create-github-app-token@v3
       id: github-token
       with:
-        client-id: ${{ inputs.GITHUB_WORKFLOWS_CLIENT_ID }}
-        private-key: ${{ inputs.GITHUB_WORKFLOWS_PRIVATE_KEY }}
+        client-id: ${{ inputs.github-app-client-id }}
+        private-key: ${{ inputs.github-app-private-key }}
         owner: ${{ github.repository_owner }}
 
     - name: Checkout Code

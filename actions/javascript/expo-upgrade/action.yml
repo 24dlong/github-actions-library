@@ -2,26 +2,29 @@ name: Upgrade Expo dependencies
 description: Upgrades Expo dependencies based on the Expo SDK version in the target branch
 
 inputs:
-  GITHUB_APP_CLIENT_ID:
+  github-app-client-id:
     description: GitHub App client ID used to commit dependency updates.
     required: true
-  AWS_ACCOUNT_ID:
-    description: AWS Account ID hosting CodeArtifact.
+  github-app-private-key:
+    description: GitHub App private key used to commit dependency updates.
     required: true
-  AWS_REGION:
-    description: AWS region hosting CodeArtifact.
+  codeartifact-aws-account-id:
+    description: AWS account ID that owns the CodeArtifact domain.
     required: true
-  AWS_ROLE_TO_ASSUME:
-    description: AWS role to assume for CodeArtifact repository access.
+  codeartifact-aws-region:
+    description: AWS region of the CodeArtifact domain.
     required: true
-  AWS_CODE_ARTIFACT_DOMAIN:
-    description: AWS CodeArtifact domain.
+  codeartifact-aws-role-to-assume:
+    description: ARN of the AWS IAM role allowed to read from CodeArtifact.
     required: true
-  AWS_CODE_ARTIFACT_REPOSITORY:
-    description: AWS CodeArtifact repository.
+  codeartifact-domain:
+    description: CodeArtifact domain name.
     required: true
-  REGISTRY_NAMESPACE:
-    description: Namespace to use for registry authentication.
+  codeartifact-repository:
+    description: CodeArtifact repository name.
+    required: true
+  codeartifact-registry-namespace:
+    description: npm scope served by CodeArtifact (e.g. "@my-org").
     required: true
 
 outputs:
@@ -36,8 +39,8 @@ runs:
       id: app-token
       uses: actions/create-github-app-token@v3
       with:
-        client-id: ${{ inputs.GITHUB_APP_CLIENT_ID }}
-        private-key: ${{ inputs.GITHUB_APP_PRIVATE_KEY }}
+        client-id: ${{ inputs.github-app-client-id }}
+        private-key: ${{ inputs.github-app-private-key }}
         permission-contents: write
 
     - name: Checkout repository
@@ -48,19 +51,15 @@ runs:
     - name: Setup JavaScript Environment
       uses: 24dlong/github-actions-library/actions/javascript/setup-no-install@v6
       with:
-        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
-        AWS_REGION: ${{ inputs.AWS_REGION }}
-        AWS_ROLE_TO_ASSUME: ${{ inputs.AWS_ROLE_TO_ASSUME }}
-        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
-        AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
-        REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
+        codeartifact-aws-account-id: ${{ inputs.codeartifact-aws-account-id }}
+        codeartifact-aws-region: ${{ inputs.codeartifact-aws-region }}
+        codeartifact-aws-role-to-assume: ${{ inputs.codeartifact-aws-role-to-assume }}
+        codeartifact-domain: ${{ inputs.codeartifact-domain }}
+        codeartifact-repository: ${{ inputs.codeartifact-repository }}
+        codeartifact-registry-namespace: ${{ inputs.codeartifact-registry-namespace }}
 
+    # Registry environment variables are exported by the setup action.
     - name: Private Registry Authentication
-      env:
-        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
-        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
-        AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
-        REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
       run: make registry-auth
       shell: bash
 
@@ -74,7 +73,7 @@ runs:
       id: commit
       uses: 24dlong/github-actions-library/actions/javascript/commit@v6
       with:
-        GITHUB_APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
-        GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-        BRANCH: ${{ github.head_ref || github.ref_name }}
-        COMMIT_MESSAGE: "chore: upgrade Expo dependencies"
+        github-app-slug: ${{ steps.app-token.outputs.app-slug }}
+        github-token: ${{ steps.app-token.outputs.token }}
+        branch: ${{ github.head_ref || github.ref_name }}
+        commit-message: "chore: upgrade Expo dependencies"
