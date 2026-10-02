@@ -1,5 +1,7 @@
 name: Publish
-description: Runs Quality Gate Checks and Publishes a JavaScript library to AWS CodeArtifact.
+description: >-
+  Runs Quality Gate checks and publishes a JavaScript library to AWS CodeArtifact.
+  The consumer's `make publish` is responsible for the CodeArtifact publish.
 
 inputs:
   GITHUB_TOKEN:
@@ -24,29 +26,21 @@ inputs:
     description: Namespace to use for registry authentication.
     required: true
 
+outputs:
+  released:
+    description: "'true' if a new version was released, otherwise 'false'."
+    value: ${{ steps.publish.outputs.released }}
+  version:
+    description: Released version without the leading v. Empty when nothing was released.
+    value: ${{ steps.publish.outputs.version }}
+
 runs:
   using: composite
   steps:
-    - name: Quality Gate
-      # TODO: This technically creates a potential issue where an older version of the publish action
-      # could call a later version of the quality-gate action. This isn't a problem if breaking changes
-      # in the quality-gate action are properly managed with major versions, however, it's not ideal.
-      # However, GitHub currently doesn't allow local references in composite actions, accessing the
-      # version of composite action called, or passing any variable to the uses parameter. Since this will
-      # only be used internally, taking this as the lesser of two evils, rather than duplicating the
-      # quality-gate steps here.
-      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v5
+    - name: Publish
+      id: publish
+      uses: 24dlong/github-actions-library/actions/javascript/publish@v6
       with:
-        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
-        AWS_REGION: ${{ inputs.AWS_REGION }}
-        AWS_ROLE_TO_ASSUME: ${{ inputs.AWS_ROLE_TO_ASSUME }}
-        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
-        AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
-        REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
-
-
-    - name: Release
-      env:
         GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
         AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
         AWS_REGION: ${{ inputs.AWS_REGION }}
@@ -54,5 +48,3 @@ runs:
         AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
         AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
         REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
-      run: make publish
-      shell: bash

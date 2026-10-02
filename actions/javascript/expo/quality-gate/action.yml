@@ -1,7 +1,14 @@
 name: Expo Quality Gate
-description: Runs JavaScript quality checks and Expo compatibility checks for an Expo repository.
+description: >-
+  Runs Expo-specific quality checks (currently Expo Doctor) for an Expo project.
+  Self-contained: checks out and installs dependencies itself, so run it as its
+  own job alongside the base JavaScript quality gate.
 
 inputs:
+  working-directory:
+    description: Directory of the Expo project, relative to the repository root (e.g. "apps/mobile").
+    required: false
+    default: .
   AWS_ACCOUNT_ID:
     description: AWS Account ID hosting CodeArtifact
     required: true
@@ -24,11 +31,11 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Quality Gate
-      # TODO: This technically creates a potential issue where an older version of the expo quality-gate
-      # action could call a later version of the base quality-gate action. This follows the same tradeoff
-      # as the publish actions to avoid duplicating the base quality-gate steps here.
-      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v5
+    - name: Checkout Code
+      uses: actions/checkout@v7
+
+    - name: Setup JavaScript
+      uses: 24dlong/github-actions-library/actions/javascript/setup@v6
       with:
         AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
         AWS_REGION: ${{ inputs.AWS_REGION }}
@@ -38,5 +45,6 @@ runs:
         REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
 
     - name: Expo Doctor
+      working-directory: ${{ inputs.working-directory }}
       run: npx expo-doctor
       shell: bash

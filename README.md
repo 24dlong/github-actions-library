@@ -2,6 +2,20 @@
 
 A collection of reusable GitHub Actions for various technologies, designed for reusability.
 
+## Migrating from v5 to v6
+
+- `actions/javascript/expo/quality-gate` no longer runs the base JavaScript Quality Gate.
+  Run `actions/javascript/quality-gate` and `actions/javascript/expo/quality-gate` as
+  separate jobs. Use `working-directory` when the Expo app isn't at the repository root.
+- `actions/terraform/tfvars-bump-pr` now defaults `variable` to `image_tag` (was
+  `image_uri`).
+- The JavaScript setup actions now export `CODEARTIFACT_AUTH_TOKEN`. Registry auth
+  scripts that already call `aws codeartifact login` keep working.
+- New: `actions/aws/codeartifact-token`, `actions/nextjs/*`, and the
+  `nextjs-pull-request.yml` / `nextjs-publish.yml` reusable workflows.
+  `actions/docker/publish` gains optional CodeArtifact inputs and an `image-tag` output.
+  `actions/javascript/publish` gains `released` and `version` outputs.
+
 ## Usage
 
 ### Actions for Javascript Repositories
@@ -18,35 +32,43 @@ Requires a Makefile with the following commands implemented:
 - `make build`: Builds the project.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v5
+uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v6
 ```
 
 #### Expo Quality Gate
-Runs the base JavaScript quality gate, then checks Expo package compatibility and runs
-Expo Doctor.
+Runs Expo-specific checks (currently Expo Doctor) for the Expo project in
+`working-directory`. It checks out and installs dependencies itself and does **not** run
+the base Quality Gate, so run it as a separate job next to it.
 
-Requires the same Makefile commands and AWS inputs as the base Quality Gate action.
+Requires `make setup-env` and `make install`, plus the same AWS inputs as the base
+Quality Gate action.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/expo/quality-gate@v5
+uses: 24dlong/github-actions-library/actions/javascript/expo/quality-gate@v6
+with:
+  working-directory: apps/mobile # optional, default .
 ```
 
 ### Publish
 Executes the quality gate action and executes a publish command if checks pass.
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/publish@v5
+uses: 24dlong/github-actions-library/actions/javascript/publish@v6
 with:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 In addition to the Makefile requirements for the Quality Gate action, a `make publish`
 command must also be implemented. This command should use the tool of your choice to
-create a GitHub release and version tag.
+create a GitHub release and a `v<semver>` tag (e.g. semantic-release).
+
+Outputs `released` (`'true'` when `make publish` created a new `v*` tag on `HEAD`) and
+`version` (that tag without the leading `v`). Check out with `fetch-depth: 0` first.
 
 ### Library Publish
-Runs quality checks and publishes a JavaScript library to AWS CodeArtifact.
+Runs quality checks and publishes a JavaScript library to AWS CodeArtifact. A thin wrapper
+around Publish with the same inputs and outputs.
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/library/publish@v5
+uses: 24dlong/github-actions-library/actions/javascript/library/publish@v6
 with:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   AWS_ACCOUNT_ID: "your-account-id"
@@ -60,12 +82,109 @@ In addition to the Makefile requirements for the Quality Gate action, a `make pu
 command must also be implemented. In the case of the `library/publish` action, this
 command should also publish the library to CodeArtifact. The action handles authentication.
 
+### CodeArtifact Authentication
+The JavaScript setup actions (and therefore every JavaScript action above) assume
+`AWS_ROLE_TO_ASSUME` and export a CodeArtifact token as `CODEARTIFACT_AUTH_TOKEN`. The
+consumer's registry auth script (run by `make install`) should configure npm from that
+variable when it is set, and fall back to `aws codeartifact login` locally. The AWS
+credentials stay in the job environment for later steps.
+
+To fetch a token directly:
+
+```yaml
+- uses: 24dlong/github-actions-library/actions/aws/codeartifact-token@v6
+  id: codeartifact
+  with:
+    AWS_ACCOUNT_ID: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+    AWS_REGION: ${{ vars.AWS_REGION }}
+    AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
+    AWS_CODE_ARTIFACT_DOMAIN: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+# ${{ steps.codeartifact.outputs.token }} is masked in logs
+```
+
+### Next.js Application Repositories
+Next.js app repositories call two reusable workflows and keep no pipeline logic of their
+own. Step logic lives in the `actions/nextjs/*` composite actions, which the workflows
+call.
+
+- `actions/nextjs/quality-gate`: the JavaScript Quality Gate today. Next.js-specific
+  checks go here.
+- `actions/nextjs/publish`: pushes the container image tagged with a released version
+  (Publish Image to ECR, with CodeArtifact auth), then opens an `image_tag` bump pull
+  request in the infra repository (Terraform tfvars Bump Pull Request).
+
+Both workflows read these caller repository (or GitHub Environment) variables:
+
+| Variable | Used by | Purpose |
+| --- | --- | --- |
+| `AWS_CODE_ARTIFACT_ACCOUNT_ID`, `AWS_REGION`, `AWS_ROLE_TO_ASSUME`, `AWS_CODE_ARTIFACT_DOMAIN`, `AWS_CODE_ARTIFACT_REPOSITORY`, `REGISTRY_NAMESPACE` | both | CodeArtifact install and the Docker build |
+| `AWS_ROLE_ARN_ECR_PUSH`, `ECR_REPOSITORY_URI` | publish | Image push |
+| `INFRA_REPOSITORY_OWNER`, `INFRA_REPOSITORY_NAME`, `GH_WORKFLOWS_APP_CLIENT_ID` | publish | `image_tag` bump pull request |
+
+#### Next.js Pull Request
+Runs `Quality Gate | Core`, plus `Quality Gate | Expo` when `expo-working-directory` is
+set (for monorepos that also contain an Expo app).
+
+```yaml
+# .github/workflows/pull-request.yml
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality-gate:
+    permissions:
+      id-token: write
+      contents: read
+    uses: 24dlong/github-actions-library/.github/workflows/nextjs-pull-request.yml@v6
+    with:
+      expo-working-directory: apps/mobile # optional
+```
+
+Status checks are reported as `quality-gate / Quality Gate | Core` (caller job name
+prefix); use that name in branch protection.
+
+#### Next.js Publish
+The `release` job runs Publish (quality gate, then `make publish`). If that cut a new
+version, the `publish` job runs `actions/nextjs/publish` on an arm64 runner in the
+`production` GitHub Environment, tagging the image with the version (no leading `v`).
+
+```yaml
+# .github/workflows/merge.yml
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+    uses: 24dlong/github-actions-library/.github/workflows/nextjs-publish.yml@v6
+    with:
+      dockerfile: apps/web/Dockerfile
+      build-args: | # optional, extra build args
+        SENTRY_DSN=${{ vars.SENTRY_DSN }}
+      # context, platform, runs-on and environment are optional
+    secrets:
+      github-app-private-key: ${{ secrets.GH_WORKFLOWS_APP_PRIVATE_KEY }}
+```
+
+The CodeArtifact role and the ECR push role must both trust the
+`repo:<owner>/<repo>:environment:<environment>` OIDC subject for the `publish` job.
+
 ### Generic Actions
 #### Quality Gate
 Checks out the repository and runs lint checks. Not specific to any language or technology.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/quality-gate@v5
+uses: 24dlong/github-actions-library/actions/quality-gate@v6
 ```
 
 Requires a Makefile with the following commands implemented:
@@ -88,7 +207,7 @@ language or technology. All steps are skipped when triggered by its own version-
 commit (any commit message starting with `bump:`), to avoid retriggering itself.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/publish@v5
+uses: 24dlong/github-actions-library/actions/publish@v6
 with:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -99,12 +218,12 @@ personal access token or GitHub App installation token).
 ### Actions for Container Images
 #### Publish Image to ECR
 Builds a single-platform image with Docker Buildx and pushes it to Amazon ECR using
-GitHub OIDC. Outputs the pushed `digest` and a digest-pinned `image-uri`
-(`<repository>@sha256:...`) to hand to Terraform, so deployments never follow a mutable
-tag.
+GitHub OIDC. Outputs the pushed `image-tag`, its `digest`, and a digest-pinned
+`image-uri` (`<repository>@sha256:...`). With an immutable-tag ECR repository, deploy by
+`image-tag` (a release version); re-publishing an existing tag fails at push.
 
 ```yaml
-- uses: 24dlong/github-actions-library/actions/docker/publish@v5
+- uses: 24dlong/github-actions-library/actions/docker/publish@v6
   id: publish
   with:
     aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_ECR_PUSH }}
@@ -113,10 +232,23 @@ tag.
     dockerfile: apps/web/Dockerfile
     context: .
     platform: linux/arm64 # optional, default linux/arm64
-    image-tag: ${{ github.sha }} # optional, default github.sha
+    image-tag: 1.2.3 # optional, default github.sha
     secrets: | # optional
-      npm_token=${{ steps.token.outputs.token }}
+      other_secret=${{ steps.other.outputs.value }}
+    # optional: CodeArtifact auth for the build
+    AWS_ACCOUNT_ID: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+    AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
+    AWS_CODE_ARTIFACT_DOMAIN: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+    AWS_CODE_ARTIFACT_REPOSITORY: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+    REGISTRY_NAMESPACE: ${{ vars.REGISTRY_NAMESPACE }}
 ```
+
+When `AWS_CODE_ARTIFACT_DOMAIN` is set, the action fetches a CodeArtifact token
+(`AWS_REGION` defaults to `aws-region`) and adds it to the build as the
+`codeartifact_token` BuildKit secret. It also passes `AWS_REGION`, `AWS_ACCOUNT_ID`,
+`AWS_CODE_ARTIFACT_DOMAIN`, `AWS_CODE_ARTIFACT_REPOSITORY` and `REGISTRY_NAMESPACE` as
+build args. Consume them in the Dockerfile with
+`RUN --mount=type=secret,id=codeartifact_token,env=CODEARTIFACT_AUTH_TOKEN ...`.
 
 The calling job needs `permissions: id-token: write`. The image is pushed without
 provenance/SBOM attestations because AWS Lambda rejects the resulting OCI image index;
@@ -140,7 +272,7 @@ artifact keyed by PR number and head SHA so a later apply run can reuse the exac
 same plan. Intended to run on `pull_request`.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/terraform/plan@v5
+uses: 24dlong/github-actions-library/actions/terraform/plan@v6
 with:
   working-directory: infra
   environment: production
@@ -168,7 +300,7 @@ successful plan workflow run, downloads its saved plan artifact, and applies it 
 Intended to run on push to `main`.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/terraform/apply@v5
+uses: 24dlong/github-actions-library/actions/terraform/apply@v6
 with:
   working-directory: production
   aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_APPLY }}
@@ -194,7 +326,7 @@ be called both for a repository's lowest environment on every merge to `main`, a
 later by a promotion workflow for upper environments.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/terraform/deployment-pr@v5
+uses: 24dlong/github-actions-library/actions/terraform/deployment-pr@v6
 with:
   environment: production
   ref: ${{ github.sha }}
@@ -210,19 +342,19 @@ request.
 
 #### Terraform tfvars Bump Pull Request
 Opens (or reuses) a pull request in a Terraform GitOps repository that sets one string
-variable in `environments/<environment>/terraform.tfvars` — typically `image_uri` after
+variable in `environments/<environment>/terraform.tfvars` — typically `image_tag` after
 an application repository publishes a new container image. The target repository can
 live in a different org than the caller. Idempotent: if the variable already has the
 requested value, no branch or pull request is created.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/terraform/tfvars-bump-pr@v5
+uses: 24dlong/github-actions-library/actions/terraform/tfvars-bump-pr@v6
 with:
   owner: my-org # optional, default is the calling repository's owner
   repository: frontend-infra
   environment: production
-  variable: image_uri # optional, default image_uri
-  value: ${{ needs.publish.outputs.image-uri }}
+  variable: image_tag # optional, default image_tag
+  value: ${{ needs.publish.outputs.image-tag }}
   github-app-client-id: ${{ vars.GH_WORKFLOWS_APP_CLIENT_ID }}
   github-app-private-key: ${{ secrets.GH_WORKFLOWS_APP_PRIVATE_KEY }}
 ```
@@ -289,7 +421,7 @@ permissions:
 
 jobs:
   plan:
-    uses: 24dlong/github-actions-library/.github/workflows/terraform-deploy.yml@v5
+    uses: 24dlong/github-actions-library/.github/workflows/terraform-deploy.yml@v6
     permissions:
       id-token: write
       contents: read
@@ -318,7 +450,7 @@ permissions:
 
 jobs:
   apply:
-    uses: 24dlong/github-actions-library/.github/workflows/terraform-deploy.yml@v5
+    uses: 24dlong/github-actions-library/.github/workflows/terraform-deploy.yml@v6
     permissions:
       id-token: write
       contents: read
@@ -400,7 +532,7 @@ permissions:
 
 jobs:
   destroy:
-    uses: 24dlong/github-actions-library/.github/workflows/terraform-destroy.yml@v5
+    uses: 24dlong/github-actions-library/.github/workflows/terraform-destroy.yml@v6
     permissions:
       id-token: write
       contents: read
@@ -420,14 +552,14 @@ Composites used by the destroy reusable workflow. Prefer calling the
 reusable workflow rather than these directly.
 
 ```yaml
-- uses: 24dlong/github-actions-library/actions/terraform/plan-destroy@v5
+- uses: 24dlong/github-actions-library/actions/terraform/plan-destroy@v6
   with:
     working-directory: infra
     environment: production
     aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_PLAN }}
     aws-region: us-east-2
 
-- uses: 24dlong/github-actions-library/actions/terraform/apply-destroy@v5
+- uses: 24dlong/github-actions-library/actions/terraform/apply-destroy@v6
   with:
     working-directory: infra
     environment: production
@@ -442,7 +574,7 @@ GitOps Deploy reusable workflow; also usable on its own if a repo needs a
 custom job graph.
 
 ```yaml
-- uses: 24dlong/github-actions-library/actions/terraform/detect-deploy-targets@v5
+- uses: 24dlong/github-actions-library/actions/terraform/detect-deploy-targets@v6
   id: detect
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}

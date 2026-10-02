@@ -1,5 +1,7 @@
 name: Setup JavaScript Environment without Install
-description: Sets up a pnpm JavaScript project
+description: >-
+  Sets up a pnpm JavaScript project, assumes the CodeArtifact role, and exports
+  CODEARTIFACT_AUTH_TOKEN for the consumer's registry authentication script.
 
 inputs:
   AWS_ACCOUNT_ID:
@@ -38,8 +40,18 @@ runs:
         node-version-file: .nvmrc
         cache: pnpm
 
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v6
+    - name: Get CodeArtifact Token
+      id: codeartifact
+      uses: 24dlong/github-actions-library/actions/aws/codeartifact-token@v6
       with:
-        aws-region: ${{ inputs.AWS_REGION }}
-        role-to-assume: ${{ inputs.AWS_ROLE_TO_ASSUME }}
+        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
+        AWS_REGION: ${{ inputs.AWS_REGION }}
+        AWS_ROLE_TO_ASSUME: ${{ inputs.AWS_ROLE_TO_ASSUME }}
+        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
+
+    # Consumer registry-auth scripts use this instead of calling `aws codeartifact login`.
+    - name: Export CodeArtifact Token
+      env:
+        TOKEN: ${{ steps.codeartifact.outputs.token }}
+      run: echo "CODEARTIFACT_AUTH_TOKEN=${TOKEN}" >> "$GITHUB_ENV"
+      shell: bash

@@ -1,0 +1,120 @@
+name: Next.js Publish
+description: >-
+  Deploys a released version of a Next.js application: builds and pushes its
+  container image to ECR tagged with the version, then opens a pull request in
+  the infra repository setting image_tag for the target environment.
+
+inputs:
+  version:
+    description: Released version to publish (e.g. 1.2.3). Used as the image tag and the image_tag value.
+    required: true
+  dockerfile:
+    description: Path to the Dockerfile, relative to the repository root.
+    required: false
+    default: Dockerfile
+  context:
+    description: Docker build context, relative to the repository root.
+    required: false
+    default: .
+  platform:
+    description: Target platform. Must match the Lambda function's architecture.
+    required: false
+    default: linux/arm64
+  build-args:
+    description: Additional newline-separated build arguments in KEY=value form.
+    required: false
+    default: ""
+  aws-role-to-assume:
+    description: ARN of the AWS IAM role allowed to push to the ECR repository.
+    required: true
+  ecr-repository-uri:
+    description: Full ECR repository URI without a tag.
+    required: true
+  infra-repository-owner:
+    description: Owner of the infra repository. Defaults to the calling repository's owner.
+    required: false
+    default: ${{ github.repository_owner }}
+  infra-repository:
+    description: Name of the infra repository, without the owner.
+    required: true
+  environment:
+    description: Environment to deploy, matching environments/<environment>/ in the infra repository.
+    required: false
+    default: production
+  github-app-client-id:
+    description: Client Id of a GitHub App installed on the infra repository with contents and pull request write permissions.
+    required: true
+  github-app-private-key:
+    description: Private key of the GitHub App.
+    required: true
+  AWS_ACCOUNT_ID:
+    description: AWS Account ID hosting CodeArtifact
+    required: true
+  AWS_REGION:
+    description: AWS region hosting CodeArtifact and the ECR repository
+    required: true
+  AWS_ROLE_TO_ASSUME:
+    description: AWS role to assume for CodeArtifact repository access
+    required: true
+  AWS_CODE_ARTIFACT_DOMAIN:
+    description: AWS CodeArtifact domain
+    required: true
+  AWS_CODE_ARTIFACT_REPOSITORY:
+    description: AWS CodeArtifact repository
+    required: true
+  REGISTRY_NAMESPACE:
+    description: Namespace to use for registry authentication.
+    required: true
+
+outputs:
+  image-tag:
+    description: Tag of the pushed image.
+    value: ${{ steps.image.outputs.image-tag }}
+  pr-url:
+    description: URL of the infra pull request. Empty if image_tag was already set to this version.
+    value: ${{ steps.bump.outputs.pr-url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Publish Image
+      id: image
+      uses: 24dlong/github-actions-library/actions/docker/publish@v6
+      with:
+        aws-role-to-assume: ${{ inputs.aws-role-to-assume }}
+        aws-region: ${{ inputs.AWS_REGION }}
+        ecr-repository-uri: ${{ inputs.ecr-repository-uri }}
+        dockerfile: ${{ inputs.dockerfile }}
+        context: ${{ inputs.context }}
+        platform: ${{ inputs.platform }}
+        image-tag: ${{ inputs.version }}
+        build-args: ${{ inputs.build-args }}
+        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
+        AWS_REGION: ${{ inputs.AWS_REGION }}
+        AWS_ROLE_TO_ASSUME: ${{ inputs.AWS_ROLE_TO_ASSUME }}
+        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
+        AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
+        REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
+
+    - name: Request Deployment
+      id: bump
+      uses: 24dlong/github-actions-library/actions/terraform/tfvars-bump-pr@v6
+      with:
+        owner: ${{ inputs.infra-repository-owner }}
+        repository: ${{ inputs.infra-repository }}
+        environment: ${{ inputs.environment }}
+        variable: image_tag
+        value: ${{ steps.image.outputs.image-tag }}
+        github-app-client-id: ${{ inputs.github-app-client-id }}
+        github-app-private-key: ${{ inputs.github-app-private-key }}
+
+    - name: Summary
+      env:
+        IMAGE: ${{ inputs.ecr-repository-uri }}:${{ steps.image.outputs.image-tag }}
+        PR_URL: ${{ steps.bump.outputs.pr-url }}
+      run: |
+        echo "Published \`${IMAGE}\`" >> "$GITHUB_STEP_SUMMARY"
+        if [[ -n "$PR_URL" ]]; then
+          echo "Deployment pull request: ${PR_URL}" >> "$GITHUB_STEP_SUMMARY"
+        fi
+      shell: bash

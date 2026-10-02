@@ -79,7 +79,7 @@ jobs:
 
       - name: Detect deploy targets
         id: detect
-        uses: 24dlong/github-actions-library/actions/terraform/detect-deploy-targets@v5
+        uses: 24dlong/github-actions-library/actions/terraform/detect-deploy-targets@v6
         with:
           github-token: ${{ secrets.github-token }}
 
@@ -109,7 +109,7 @@ jobs:
     steps:
       - name: Plan
         if: ${{ inputs.command == 'plan' }}
-        uses: 24dlong/github-actions-library/actions/terraform/plan@v5
+        uses: 24dlong/github-actions-library/actions/terraform/plan@v6
         with:
           working-directory: ${{ inputs.working-directory }}
           environment: ${{ matrix.environment }}
@@ -121,7 +121,7 @@ jobs:
 
       - name: Apply
         if: ${{ inputs.command == 'apply' }}
-        uses: 24dlong/github-actions-library/actions/terraform/apply@v5
+        uses: 24dlong/github-actions-library/actions/terraform/apply@v6
         with:
           working-directory: ${{ inputs.working-directory }}
           aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_APPLY }}

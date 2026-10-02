@@ -1,5 +1,7 @@
-name: Setup JavaScript Environment
-description: Sets up a pnpm JavaScript project and installs dependencies from AWS CodeArtifact.
+name: Next.js Quality Gate
+description: >-
+  Runs quality checks for a Next.js application repository. Currently the base
+  JavaScript quality gate (lint, test, build); Next.js-specific checks belong here.
 
 inputs:
   AWS_ACCOUNT_ID:
@@ -24,8 +26,8 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Setup JavaScript Environment
-      uses: 24dlong/github-actions-library/actions/javascript/setup-no-install@v6
+    - name: JavaScript Quality Gate
+      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v6
       with:
         AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
         AWS_REGION: ${{ inputs.AWS_REGION }}
@@ -33,12 +35,3 @@ runs:
         AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
         AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
         REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
-
-    - name: Install Dependencies
-      env:
-        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
-        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
-        AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
-        REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
-      run: make install
-      shell: bash
