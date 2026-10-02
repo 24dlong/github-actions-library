@@ -1,12 +1,9 @@
-name: Publish
+name: Next.js Quality Gate
 description: >-
-  Runs Quality Gate checks and publishes a JavaScript library to AWS CodeArtifact.
-  The consumer's `make publish` is responsible for the CodeArtifact publish.
+  Runs quality checks for a Next.js application repository. Currently the base
+  JavaScript quality gate (lint, test, build); Next.js-specific checks belong here.
 
 inputs:
-  github-token:
-    description: GitHub token from the calling workflow, exposed to `make publish` as GITHUB_TOKEN.
-    required: true
   codeartifact-aws-account-id:
     description: AWS account ID that owns the CodeArtifact domain.
     required: true
@@ -14,7 +11,7 @@ inputs:
     description: AWS region of the CodeArtifact domain.
     required: true
   codeartifact-aws-role-to-assume:
-    description: ARN of the AWS IAM role allowed to read from and publish to CodeArtifact.
+    description: ARN of the AWS IAM role allowed to read from CodeArtifact.
     required: true
   codeartifact-domain:
     description: CodeArtifact domain name.
@@ -26,22 +23,12 @@ inputs:
     description: npm scope served by CodeArtifact (e.g. "@my-org").
     required: true
 
-outputs:
-  released:
-    description: "'true' if a new version was released, otherwise 'false'."
-    value: ${{ steps.publish.outputs.released }}
-  version:
-    description: Released version without the leading v. Empty when nothing was released.
-    value: ${{ steps.publish.outputs.version }}
-
 runs:
   using: composite
   steps:
-    - name: Publish
-      id: publish
-      uses: 24dlong/github-actions-library/actions/javascript/publish@v6
+    - name: JavaScript Quality Gate
+      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v6
       with:
-        github-token: ${{ inputs.github-token }}
         codeartifact-aws-account-id: ${{ inputs.codeartifact-aws-account-id }}
         codeartifact-aws-region: ${{ inputs.codeartifact-aws-region }}
         codeartifact-aws-role-to-assume: ${{ inputs.codeartifact-aws-role-to-assume }}

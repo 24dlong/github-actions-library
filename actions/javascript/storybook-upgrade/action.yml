@@ -2,39 +2,39 @@ name: Storybook Upgrade
 description: Upgrades Storybook and opens or updates a pull request with resulting changes.
 
 inputs:
-  GITHUB_APP_CLIENT_ID:
+  github-app-client-id:
     description: GitHub App client ID used to create the upgrade pull request.
     required: true
-  GITHUB_APP_PRIVATE_KEY:
+  github-app-private-key:
     description: GitHub App private key used to create the upgrade pull request.
     required: true
-  AWS_ACCOUNT_ID:
-    description: AWS Account ID hosting CodeArtifact.
+  codeartifact-aws-account-id:
+    description: AWS account ID that owns the CodeArtifact domain.
     required: true
-  AWS_REGION:
-    description: AWS region hosting CodeArtifact.
+  codeartifact-aws-region:
+    description: AWS region of the CodeArtifact domain.
     required: true
-  AWS_ROLE_TO_ASSUME:
-    description: AWS role to assume for CodeArtifact repository access.
+  codeartifact-aws-role-to-assume:
+    description: ARN of the AWS IAM role allowed to read from CodeArtifact.
     required: true
-  AWS_CODE_ARTIFACT_DOMAIN:
-    description: AWS CodeArtifact domain.
+  codeartifact-domain:
+    description: CodeArtifact domain name.
     required: true
-  AWS_CODE_ARTIFACT_REPOSITORY:
-    description: AWS CodeArtifact repository.
+  codeartifact-repository:
+    description: CodeArtifact repository name.
     required: true
-  REGISTRY_NAMESPACE:
-    description: Namespace to use for registry authentication.
+  codeartifact-registry-namespace:
+    description: npm scope served by CodeArtifact (e.g. "@my-org").
     required: true
-  STORYBOOK_TARGET:
+  storybook-target:
     description: Storybook dist tag or version to upgrade to.
     required: false
     default: latest
-  AUTOMATION_BRANCH:
+  automation-branch:
     description: Branch used for Storybook upgrade changes.
     required: false
     default: automation/storybook-upgrade
-  BASE_BRANCH:
+  base-branch:
     description: Base branch for the Storybook upgrade pull request.
     required: false
     default: main
@@ -57,8 +57,8 @@ runs:
       id: app-token
       uses: actions/create-github-app-token@v3
       with:
-        client-id: ${{ inputs.GITHUB_APP_CLIENT_ID }}
-        private-key: ${{ inputs.GITHUB_APP_PRIVATE_KEY }}
+        client-id: ${{ inputs.github-app-client-id }}
+        private-key: ${{ inputs.github-app-private-key }}
         permission-contents: write
         permission-pull-requests: write
 
@@ -68,19 +68,19 @@ runs:
         token: ${{ steps.app-token.outputs.token }}
 
     - name: Setup JavaScript
-      uses: 24dlong/github-actions-library/actions/javascript/setup@v5
+      uses: 24dlong/github-actions-library/actions/javascript/setup@v6
       with:
-        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
-        AWS_REGION: ${{ inputs.AWS_REGION }}
-        AWS_ROLE_TO_ASSUME: ${{ inputs.AWS_ROLE_TO_ASSUME }}
-        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
-        AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
-        REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
+        codeartifact-aws-account-id: ${{ inputs.codeartifact-aws-account-id }}
+        codeartifact-aws-region: ${{ inputs.codeartifact-aws-region }}
+        codeartifact-aws-role-to-assume: ${{ inputs.codeartifact-aws-role-to-assume }}
+        codeartifact-domain: ${{ inputs.codeartifact-domain }}
+        codeartifact-repository: ${{ inputs.codeartifact-repository }}
+        codeartifact-registry-namespace: ${{ inputs.codeartifact-registry-namespace }}
 
     - name: Resolve upgrade target
       id: target
       env:
-        INPUT_TARGET: ${{ inputs.STORYBOOK_TARGET }}
+        INPUT_TARGET: ${{ inputs.storybook-target }}
       run: |
         target="${INPUT_TARGET:-latest}"
 
@@ -185,18 +185,18 @@ runs:
 
     - name: Commit Storybook updates
       id: commit
-      uses: 24dlong/github-actions-library/actions/javascript/commit@v5
+      uses: 24dlong/github-actions-library/actions/javascript/commit@v6
       with:
-        GITHUB_APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
-        GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-        BRANCH: ${{ inputs.AUTOMATION_BRANCH }}
-        COMMIT_MESSAGE: "chore: upgrade storybook"
+        github-app-slug: ${{ steps.app-token.outputs.app-slug }}
+        github-token: ${{ steps.app-token.outputs.token }}
+        branch: ${{ inputs.automation-branch }}
+        commit-message: "chore: upgrade storybook"
 
     - name: Create or update pull request
       if: steps.commit.outputs.changed == 'true'
       env:
-        BASE_BRANCH: ${{ inputs.BASE_BRANCH }}
-        BRANCH: ${{ inputs.AUTOMATION_BRANCH }}
+        BASE_BRANCH: ${{ inputs.base-branch }}
+        BRANCH: ${{ inputs.automation-branch }}
         GH_TOKEN: ${{ steps.app-token.outputs.token }}
         STORYBOOK_TARGET: ${{ steps.target.outputs.target }}
         UPGRADE_EXIT_CODE: ${{ steps.upgrade.outputs.exit_code }}

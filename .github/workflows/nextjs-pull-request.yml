@@ -1,0 +1,56 @@
+# Reusable pull request quality gate for Next.js application repositories.
+# Not run in this repository: on.workflow_call only.
+#
+# Reads these caller repository variables (all CodeArtifact):
+#   AWS_CODE_ARTIFACT_ACCOUNT_ID, AWS_REGION, AWS_ROLE_TO_ASSUME,
+#   AWS_CODE_ARTIFACT_DOMAIN, AWS_CODE_ARTIFACT_REPOSITORY, REGISTRY_NAMESPACE
+#
+# The caller job must grant `id-token: write` and `contents: read`.
+
+name: Next.js Pull Request
+
+on:
+  workflow_call:
+    inputs:
+      expo-working-directory:
+        description: >-
+          Directory of an Expo app in the repository (e.g. "apps/mobile"). When
+          set, the Expo quality gate also runs for it.
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  core:
+    name: Quality Gate | Core
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: 24dlong/github-actions-library/actions/nextjs/quality-gate@v6
+        with:
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
+
+  expo:
+    name: Quality Gate | Expo
+    if: inputs.expo-working-directory != ''
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: 24dlong/github-actions-library/actions/javascript/expo/quality-gate@v6
+        with:
+          working-directory: ${{ inputs.expo-working-directory }}
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}

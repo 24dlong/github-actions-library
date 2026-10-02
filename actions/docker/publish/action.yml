@@ -1,24 +1,26 @@
 name: Publish Image to ECR
 description: >-
   Builds a single-platform container image with Docker Buildx and pushes it to
-  an Amazon ECR repository using GitHub OIDC credentials. Outputs the pushed
-  image's digest and a digest-pinned image URI suitable for AWS Lambda
-  (package_type = "Image") or any other consumer that should not follow a
-  mutable tag.
+  an Amazon ECR repository using GitHub OIDC credentials. Optionally fetches an
+  AWS CodeArtifact token for the build so private packages can be installed.
+  ECR and CodeArtifact are configured separately and may live in different AWS
+  accounts and regions. Outputs the pushed tag, the image digest, and a
+  digest-pinned image URI.
 
 inputs:
-  aws-role-to-assume:
-    description: ARN of the AWS IAM role to assume. Must allow pushing to the ECR repository.
-    required: true
-  aws-region:
-    description: AWS region hosting the ECR repository.
-    required: false
-    default: us-east-2
   ecr-repository-uri:
     description: >-
       Full ECR repository URI without a tag
-      (e.g. 123456789012.dkr.ecr.us-east-2.amazonaws.com/my-app).
+      (e.g. 123456789012.dkr.ecr.us-east-2.amazonaws.com/my-app). Its account
+      is the account the image is pushed to.
     required: true
+  ecr-aws-role-to-assume:
+    description: ARN of the AWS IAM role allowed to push to the ECR repository.
+    required: true
+  ecr-aws-region:
+    description: AWS region of the ECR repository. Defaults to the region in ecr-repository-uri.
+    required: false
+    default: ""
   dockerfile:
     description: Path to the Dockerfile, relative to the repository root.
     required: false
@@ -34,7 +36,9 @@ inputs:
     required: false
     default: linux/arm64
   image-tag:
-    description: Tag applied to the pushed image. Defaults to the triggering commit sha.
+    description: >-
+      Tag applied to the pushed image. Defaults to the triggering commit sha.
+      If the repository uses immutable tags, re-publishing an existing tag fails at push.
     required: false
     default: ${{ github.sha }}
   secrets:
@@ -47,8 +51,40 @@ inputs:
     description: Newline-separated build arguments in KEY=value form.
     required: false
     default: ""
+  codeartifact-domain:
+    description: >-
+      CodeArtifact domain name. Optional: when set, a CodeArtifact token is
+      passed to the build as the `codeartifact_token` BuildKit secret, and
+      AWS_REGION, AWS_ACCOUNT_ID, AWS_CODE_ARTIFACT_DOMAIN,
+      AWS_CODE_ARTIFACT_REPOSITORY and REGISTRY_NAMESPACE (the CodeArtifact
+      values) are passed as build args. All other codeartifact-* inputs are then required.
+    required: false
+    default: ""
+  codeartifact-aws-account-id:
+    description: AWS account ID that owns the CodeArtifact domain.
+    required: false
+    default: ""
+  codeartifact-aws-region:
+    description: AWS region of the CodeArtifact domain.
+    required: false
+    default: ""
+  codeartifact-aws-role-to-assume:
+    description: ARN of the AWS IAM role allowed to call codeartifact:GetAuthorizationToken.
+    required: false
+    default: ""
+  codeartifact-repository:
+    description: CodeArtifact repository name.
+    required: false
+    default: ""
+  codeartifact-registry-namespace:
+    description: npm scope served by CodeArtifact (e.g. "@my-org").
+    required: false
+    default: ""
 
 outputs:
+  image-tag:
+    description: Tag of the pushed image.
+    value: ${{ inputs.image-tag }}
   digest:
     description: Digest of the pushed image (sha256:...).
     value: ${{ steps.build.outputs.digest }}
@@ -62,11 +98,88 @@ runs:
     - name: Checkout Code
       uses: actions/checkout@v7
 
-    - name: Configure AWS credentials
+    - name: Validate inputs
+      id: validate
+      shell: bash
+      env:
+        ECR_REPOSITORY_URI: ${{ inputs.ecr-repository-uri }}
+        ECR_AWS_REGION: ${{ inputs.ecr-aws-region }}
+        CA_DOMAIN: ${{ inputs.codeartifact-domain }}
+        CA_ACCOUNT_ID: ${{ inputs.codeartifact-aws-account-id }}
+        CA_REGION: ${{ inputs.codeartifact-aws-region }}
+        CA_ROLE: ${{ inputs.codeartifact-aws-role-to-assume }}
+        CA_REPOSITORY: ${{ inputs.codeartifact-repository }}
+        CA_NAMESPACE: ${{ inputs.codeartifact-registry-namespace }}
+      run: |
+        set -euo pipefail
+        region="$ECR_AWS_REGION"
+        if [[ -z "$region" ]]; then
+          if [[ "$ECR_REPOSITORY_URI" =~ ^[0-9]{12}\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com/ ]]; then
+            region="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Could not read the region from ecr-repository-uri '${ECR_REPOSITORY_URI}'. Set ecr-aws-region."
+            exit 1
+          fi
+        fi
+        echo "ecr-aws-region=${region}" >> "$GITHUB_OUTPUT"
+
+        if [[ -n "$CA_DOMAIN" ]]; then
+          missing=()
+          [[ -n "$CA_ACCOUNT_ID" ]] || missing+=(codeartifact-aws-account-id)
+          [[ -n "$CA_REGION" ]] || missing+=(codeartifact-aws-region)
+          [[ -n "$CA_ROLE" ]] || missing+=(codeartifact-aws-role-to-assume)
+          [[ -n "$CA_REPOSITORY" ]] || missing+=(codeartifact-repository)
+          [[ -n "$CA_NAMESPACE" ]] || missing+=(codeartifact-registry-namespace)
+          if (( ${#missing[@]} )); then
+            echo "::error::codeartifact-domain is set, so these inputs are required: ${missing[*]}"
+            exit 1
+          fi
+        fi
+
+    - name: Get CodeArtifact Token
+      id: codeartifact
+      if: inputs.codeartifact-domain != ''
+      uses: 24dlong/github-actions-library/actions/aws/codeartifact-token@v6
+      with:
+        codeartifact-aws-account-id: ${{ inputs.codeartifact-aws-account-id }}
+        codeartifact-aws-region: ${{ inputs.codeartifact-aws-region }}
+        codeartifact-aws-role-to-assume: ${{ inputs.codeartifact-aws-role-to-assume }}
+        codeartifact-domain: ${{ inputs.codeartifact-domain }}
+
+    - name: Assemble build inputs
+      id: inputs
+      shell: bash
+      env:
+        SECRETS: ${{ inputs.secrets }}
+        BUILD_ARGS: ${{ inputs.build-args }}
+        CODEARTIFACT_TOKEN: ${{ steps.codeartifact.outputs.token }}
+        CA_DOMAIN: ${{ inputs.codeartifact-domain }}
+        CA_ACCOUNT_ID: ${{ inputs.codeartifact-aws-account-id }}
+        CA_REGION: ${{ inputs.codeartifact-aws-region }}
+        CA_REPOSITORY: ${{ inputs.codeartifact-repository }}
+        CA_NAMESPACE: ${{ inputs.codeartifact-registry-namespace }}
+      run: |
+        set -euo pipefail
+        if [[ -n "$CA_DOMAIN" ]]; then
+          SECRETS="$(printf '%s\ncodeartifact_token=%s' "$SECRETS" "$CODEARTIFACT_TOKEN")"
+          BUILD_ARGS="$(printf '%s\nAWS_REGION=%s\nAWS_ACCOUNT_ID=%s\nAWS_CODE_ARTIFACT_DOMAIN=%s\nAWS_CODE_ARTIFACT_REPOSITORY=%s\nREGISTRY_NAMESPACE=%s' \
+            "$BUILD_ARGS" "$CA_REGION" "$CA_ACCOUNT_ID" "$CA_DOMAIN" "$CA_REPOSITORY" "$CA_NAMESPACE")"
+        fi
+        delimiter="EOF_$(openssl rand -hex 8)"
+        {
+          echo "secrets<<${delimiter}"
+          echo "$SECRETS"
+          echo "${delimiter}"
+          echo "build-args<<${delimiter}"
+          echo "$BUILD_ARGS"
+          echo "${delimiter}"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Configure AWS Credentials (ECR)
       uses: aws-actions/configure-aws-credentials@v6
       with:
-        role-to-assume: ${{ inputs.aws-role-to-assume }}
-        aws-region: ${{ inputs.aws-region }}
+        role-to-assume: ${{ inputs.ecr-aws-role-to-assume }}
+        aws-region: ${{ steps.validate.outputs.ecr-aws-region }}
 
     - name: Login to Amazon ECR
       uses: aws-actions/amazon-ecr-login@v2
@@ -82,8 +195,8 @@ runs:
         file: ${{ inputs.dockerfile }}
         platforms: ${{ inputs.platform }}
         tags: ${{ inputs.ecr-repository-uri }}:${{ inputs.image-tag }}
-        secrets: ${{ inputs.secrets }}
-        build-args: ${{ inputs.build-args }}
+        secrets: ${{ steps.inputs.outputs.secrets }}
+        build-args: ${{ steps.inputs.outputs.build-args }}
         push: true
         # Lambda only accepts a plain single-platform image manifest; attestations
         # turn the push into an OCI image index, which Lambda rejects.

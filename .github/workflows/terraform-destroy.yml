@@ -71,7 +71,7 @@ jobs:
         -backend-config=use_lockfile=true
     steps:
       - name: Plan destroy
-        uses: 24dlong/github-actions-library/actions/terraform/plan-destroy@v5
+        uses: 24dlong/github-actions-library/actions/terraform/plan-destroy@v6
         with:
           working-directory: ${{ inputs.working-directory }}
           environment: ${{ inputs.environment }}
@@ -98,7 +98,7 @@ jobs:
         -backend-config=use_lockfile=true
     steps:
       - name: Apply destroy plan
-        uses: 24dlong/github-actions-library/actions/terraform/apply-destroy@v5
+        uses: 24dlong/github-actions-library/actions/terraform/apply-destroy@v6
         with:
           working-directory: ${{ inputs.working-directory }}
           environment: ${{ inputs.environment }}

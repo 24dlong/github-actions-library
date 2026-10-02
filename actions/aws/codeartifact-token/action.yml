@@ -1,0 +1,49 @@
+name: CodeArtifact Token
+description: >-
+  Assumes an AWS IAM role via GitHub OIDC and fetches a masked AWS CodeArtifact
+  authorization token. The assumed role's credentials remain in the job
+  environment for later steps.
+
+inputs:
+  codeartifact-aws-account-id:
+    description: AWS account ID that owns the CodeArtifact domain.
+    required: true
+  codeartifact-aws-region:
+    description: AWS region of the CodeArtifact domain.
+    required: true
+  codeartifact-aws-role-to-assume:
+    description: ARN of the AWS IAM role allowed to call codeartifact:GetAuthorizationToken.
+    required: true
+  codeartifact-domain:
+    description: CodeArtifact domain name.
+    required: true
+
+outputs:
+  token:
+    description: CodeArtifact authorization token (masked in logs).
+    value: ${{ steps.token.outputs.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Configure AWS Credentials (CodeArtifact)
+      uses: aws-actions/configure-aws-credentials@v6
+      with:
+        aws-region: ${{ inputs.codeartifact-aws-region }}
+        role-to-assume: ${{ inputs.codeartifact-aws-role-to-assume }}
+
+    - name: Get CodeArtifact Token
+      id: token
+      shell: bash
+      env:
+        CODEARTIFACT_DOMAIN: ${{ inputs.codeartifact-domain }}
+        CODEARTIFACT_ACCOUNT_ID: ${{ inputs.codeartifact-aws-account-id }}
+      run: |
+        set -euo pipefail
+        token="$(aws codeartifact get-authorization-token \
+          --domain "$CODEARTIFACT_DOMAIN" \
+          --domain-owner "$CODEARTIFACT_ACCOUNT_ID" \
+          --query authorizationToken \
+          --output text)"
+        echo "::add-mask::$token"
+        echo "token=$token" >> "$GITHUB_OUTPUT"

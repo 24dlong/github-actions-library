@@ -1,0 +1,124 @@
+# Reusable publish workflow for Next.js application repositories.
+# Not run in this repository: on.workflow_call only.
+#
+# 1. release: quality gate, then the caller's `make publish` (semantic-release).
+# 2. publish: only when a new version was released. Builds and pushes the
+#    container image tagged with that version, then opens an image_tag bump
+#    pull request in the infra repository.
+#
+# Reads these caller repository (or GitHub Environment) variables:
+#   CodeArtifact: AWS_CODE_ARTIFACT_ACCOUNT_ID, AWS_REGION, AWS_ROLE_TO_ASSUME,
+#     AWS_CODE_ARTIFACT_DOMAIN, AWS_CODE_ARTIFACT_REPOSITORY, REGISTRY_NAMESPACE
+#   ECR (may be a different AWS account/region than CodeArtifact):
+#     ECR_REPOSITORY_URI (its account and region are where the image is pushed),
+#     AWS_ROLE_ARN_ECR_PUSH
+#   Deployment: INFRA_REPOSITORY_OWNER, INFRA_REPOSITORY_NAME,
+#     GH_WORKFLOWS_APP_CLIENT_ID
+#
+# The caller job must grant `contents: write`, `issues: write`,
+# `pull-requests: write` and `id-token: write`.
+
+name: Next.js Publish
+
+on:
+  workflow_call:
+    inputs:
+      dockerfile:
+        description: Path to the Dockerfile, relative to the repository root.
+        required: false
+        type: string
+        default: Dockerfile
+      context:
+        description: Docker build context, relative to the repository root.
+        required: false
+        type: string
+        default: .
+      platform:
+        description: Target image platform. Must match the Lambda function's architecture.
+        required: false
+        type: string
+        default: linux/arm64
+      build-args:
+        description: Additional newline-separated build arguments in KEY=value form.
+        required: false
+        type: string
+        default: ""
+      runs-on:
+        description: Runner for the image build. Use an arm64 runner for linux/arm64 images.
+        required: false
+        type: string
+        default: ubuntu-24.04-arm
+      environment:
+        description: GitHub Environment and infra environment to deploy.
+        required: false
+        type: string
+        default: production
+    secrets:
+      github-app-private-key:
+        description: Private key of the GitHub App installed on the infra repository.
+        required: true
+    outputs:
+      version:
+        description: Released version, empty if nothing was released.
+        value: ${{ jobs.release.outputs.version }}
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+    outputs:
+      released: ${{ steps.publish.outputs.released }}
+      version: ${{ steps.publish.outputs.version }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Release
+        id: publish
+        uses: 24dlong/github-actions-library/actions/javascript/publish@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
+
+  publish:
+    name: Publish
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ${{ inputs.runs-on }}
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: 24dlong/github-actions-library/actions/nextjs/publish@v6
+        with:
+          version: ${{ needs.release.outputs.version }}
+          dockerfile: ${{ inputs.dockerfile }}
+          context: ${{ inputs.context }}
+          platform: ${{ inputs.platform }}
+          build-args: ${{ inputs.build-args }}
+          ecr-repository-uri: ${{ vars.ECR_REPOSITORY_URI }}
+          ecr-aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_ECR_PUSH }}
+          infra-repository-owner: ${{ vars.INFRA_REPOSITORY_OWNER }}
+          infra-repository: ${{ vars.INFRA_REPOSITORY_NAME }}
+          environment: ${{ inputs.environment }}
+          github-app-client-id: ${{ vars.GH_WORKFLOWS_APP_CLIENT_ID }}
+          github-app-private-key: ${{ secrets.github-app-private-key }}
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}

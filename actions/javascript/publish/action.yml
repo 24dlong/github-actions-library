@@ -2,27 +2,35 @@ name: Publish
 description: Runs Quality Gate checks and creates a GitHub release for a generic JavaScript repository.
 
 inputs:
-  GITHUB_TOKEN:
-    description: GitHub token from the calling workflow
+  github-token:
+    description: GitHub token from the calling workflow, exposed to `make publish` as GITHUB_TOKEN.
     required: true
-  AWS_ACCOUNT_ID:
-    description: AWS Account ID hosting CodeArtifact
+  codeartifact-aws-account-id:
+    description: AWS account ID that owns the CodeArtifact domain.
     required: true
-  AWS_REGION:
-    description: AWS region hosting CodeArtifact
+  codeartifact-aws-region:
+    description: AWS region of the CodeArtifact domain.
     required: true
-  AWS_ROLE_TO_ASSUME:
-    description: AWS role to assume for CodeArtifact repository access
+  codeartifact-aws-role-to-assume:
+    description: ARN of the AWS IAM role allowed to read from (and, for libraries, publish to) CodeArtifact.
     required: true
-  AWS_CODE_ARTIFACT_DOMAIN:
-    description: AWS CodeArtifact domain
+  codeartifact-domain:
+    description: CodeArtifact domain name.
     required: true
-  AWS_CODE_ARTIFACT_REPOSITORY:
-    description: AWS CodeArtifact repository
+  codeartifact-repository:
+    description: CodeArtifact repository name.
     required: true
-  REGISTRY_NAMESPACE:
-    description: Namespace to use for registry authentication.
+  codeartifact-registry-namespace:
+    description: npm scope served by CodeArtifact (e.g. "@my-org").
     required: true
+
+outputs:
+  released:
+    description: "'true' if `make publish` created a new v<semver> tag on HEAD, otherwise 'false'."
+    value: ${{ steps.release.outputs.released }}
+  version:
+    description: Released version without the leading v (e.g. 1.2.3). Empty when nothing was released.
+    value: ${{ steps.release.outputs.version }}
 
 runs:
   using: composite
@@ -35,23 +43,48 @@ runs:
       # version of composite action called, or passing any variable to the uses parameter. Since this will
       # only be used internally, taking this as the lesser of two evils, rather than duplicating the
       # quality-gate steps here.
-      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v5
+      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v6
       with:
-        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
-        AWS_REGION: ${{ inputs.AWS_REGION }}
-        AWS_ROLE_TO_ASSUME: ${{ inputs.AWS_ROLE_TO_ASSUME }}
-        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
-        AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
-        REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
+        codeartifact-aws-account-id: ${{ inputs.codeartifact-aws-account-id }}
+        codeartifact-aws-region: ${{ inputs.codeartifact-aws-region }}
+        codeartifact-aws-role-to-assume: ${{ inputs.codeartifact-aws-role-to-assume }}
+        codeartifact-domain: ${{ inputs.codeartifact-domain }}
+        codeartifact-repository: ${{ inputs.codeartifact-repository }}
+        codeartifact-registry-namespace: ${{ inputs.codeartifact-registry-namespace }}
 
+    - name: Record Existing Tags
+      id: existing-tags
+      run: |
+        set -euo pipefail
+        git fetch --tags --force --quiet
+        echo "tags=$(git tag --points-at HEAD --list 'v[0-9]*' | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+      shell: bash
+
+    # Registry environment variables are exported by the setup action.
     - name: Release
       env:
-        GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
-        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
-        AWS_REGION: ${{ inputs.AWS_REGION }}
-        AWS_ROLE_TO_ASSUME: ${{ inputs.AWS_ROLE_TO_ASSUME }}
-        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
-        AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
-        REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
       run: make publish
+      shell: bash
+
+    - name: Detect Release
+      id: release
+      env:
+        EXISTING_TAGS: ${{ steps.existing-tags.outputs.tags }}
+      run: |
+        set -euo pipefail
+        tag=""
+        for candidate in $(git tag --points-at HEAD --list 'v[0-9]*' --sort=-v:refname); do
+          if [[ " ${EXISTING_TAGS} " != *" ${candidate} "* ]]; then
+            tag="$candidate"
+            break
+          fi
+        done
+        if [[ -n "$tag" ]]; then
+          echo "released=true" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+        else
+          echo "released=false" >> "$GITHUB_OUTPUT"
+          echo "version=" >> "$GITHUB_OUTPUT"
+        fi
       shell: bash

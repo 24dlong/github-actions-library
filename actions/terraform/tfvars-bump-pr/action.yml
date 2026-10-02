@@ -2,7 +2,7 @@ name: Bump tfvars Variable
 description: >-
   Opens (or reuses) a pull request in a Terraform GitOps repository that sets a
   single string variable in environments/<environment>/terraform.tfvars (e.g.
-  image_uri after publishing a new container image). The target repository may
+  image_tag after publishing a new container image). The target repository may
   be different from, and owned by a different org than, the calling repository.
   Idempotent: if the variable already has the requested value, no branch/PR is
   created.
@@ -21,7 +21,7 @@ inputs:
   variable:
     description: Name of the Terraform variable to set.
     required: false
-    default: image_uri
+    default: image_tag
   value:
     description: New string value for the variable.
     required: true

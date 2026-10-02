@@ -2,16 +2,16 @@ name: Commit changes
 description: Commits all workspace changes and pushes them to a branch as a GitHub App bot.
 
 inputs:
-  GITHUB_APP_SLUG:
+  github-app-slug:
     description: GitHub App slug used for commit attribution.
     required: true
-  GITHUB_TOKEN:
+  github-token:
     description: GitHub App installation token used for author lookup and push authentication.
     required: true
-  BRANCH:
+  branch:
     description: Branch that receives the commit.
     required: true
-  COMMIT_MESSAGE:
+  commit-message:
     description: Commit message to use when changes exist.
     required: true
 
@@ -37,8 +37,8 @@ runs:
     - name: Configure git author
       if: steps.changes.outputs.changed == 'true'
       env:
-        APP_SLUG: ${{ inputs.GITHUB_APP_SLUG }}
-        GH_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+        APP_SLUG: ${{ inputs.github-app-slug }}
+        GH_TOKEN: ${{ inputs.github-token }}
       run: |
         bot_user="${APP_SLUG}[bot]"
         bot_id="$(gh api "/users/${bot_user}" --jq .id)"
@@ -50,8 +50,8 @@ runs:
     - name: Commit and push changes
       if: steps.changes.outputs.changed == 'true'
       env:
-        BRANCH: ${{ inputs.BRANCH }}
-        COMMIT_MESSAGE: ${{ inputs.COMMIT_MESSAGE }}
+        BRANCH: ${{ inputs.branch }}
+        COMMIT_MESSAGE: ${{ inputs.commit-message }}
       run: |
         git switch -C "$BRANCH"
         git add --all

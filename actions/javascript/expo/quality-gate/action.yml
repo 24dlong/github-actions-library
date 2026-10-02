@@ -1,42 +1,50 @@
 name: Expo Quality Gate
-description: Runs JavaScript quality checks and Expo compatibility checks for an Expo repository.
+description: >-
+  Runs Expo-specific quality checks (currently Expo Doctor) for an Expo project.
+  Self-contained: checks out and installs dependencies itself, so run it as its
+  own job alongside the base JavaScript quality gate.
 
 inputs:
-  AWS_ACCOUNT_ID:
-    description: AWS Account ID hosting CodeArtifact
+  working-directory:
+    description: Directory of the Expo project, relative to the repository root (e.g. "apps/mobile").
+    required: false
+    default: .
+  codeartifact-aws-account-id:
+    description: AWS account ID that owns the CodeArtifact domain.
     required: true
-  AWS_REGION:
-    description: AWS region hosting CodeArtifact
+  codeartifact-aws-region:
+    description: AWS region of the CodeArtifact domain.
     required: true
-  AWS_ROLE_TO_ASSUME:
-    description: AWS role to assume for CodeArtifact repository access
+  codeartifact-aws-role-to-assume:
+    description: ARN of the AWS IAM role allowed to read from CodeArtifact.
     required: true
-  AWS_CODE_ARTIFACT_DOMAIN:
-    description: AWS CodeArtifact domain
+  codeartifact-domain:
+    description: CodeArtifact domain name.
     required: true
-  AWS_CODE_ARTIFACT_REPOSITORY:
-    description: AWS CodeArtifact repository
+  codeartifact-repository:
+    description: CodeArtifact repository name.
     required: true
-  REGISTRY_NAMESPACE:
-    description: Namespace to use for registry authentication.
+  codeartifact-registry-namespace:
+    description: npm scope served by CodeArtifact (e.g. "@my-org").
     required: true
 
 runs:
   using: composite
   steps:
-    - name: Quality Gate
-      # TODO: This technically creates a potential issue where an older version of the expo quality-gate
-      # action could call a later version of the base quality-gate action. This follows the same tradeoff
-      # as the publish actions to avoid duplicating the base quality-gate steps here.
-      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v5
+    - name: Checkout Code
+      uses: actions/checkout@v7
+
+    - name: Setup JavaScript
+      uses: 24dlong/github-actions-library/actions/javascript/setup@v6
       with:
-        AWS_ACCOUNT_ID: ${{ inputs.AWS_ACCOUNT_ID }}
-        AWS_REGION: ${{ inputs.AWS_REGION }}
-        AWS_ROLE_TO_ASSUME: ${{ inputs.AWS_ROLE_TO_ASSUME }}
-        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.AWS_CODE_ARTIFACT_DOMAIN }}
-        AWS_CODE_ARTIFACT_REPOSITORY: ${{ inputs.AWS_CODE_ARTIFACT_REPOSITORY }}
-        REGISTRY_NAMESPACE: ${{ inputs.REGISTRY_NAMESPACE }}
+        codeartifact-aws-account-id: ${{ inputs.codeartifact-aws-account-id }}
+        codeartifact-aws-region: ${{ inputs.codeartifact-aws-region }}
+        codeartifact-aws-role-to-assume: ${{ inputs.codeartifact-aws-role-to-assume }}
+        codeartifact-domain: ${{ inputs.codeartifact-domain }}
+        codeartifact-repository: ${{ inputs.codeartifact-repository }}
+        codeartifact-registry-namespace: ${{ inputs.codeartifact-registry-namespace }}
 
     - name: Expo Doctor
+      working-directory: ${{ inputs.working-directory }}
       run: npx expo-doctor
       shell: bash
