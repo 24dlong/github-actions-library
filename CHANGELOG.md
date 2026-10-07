@@ -1,3 +1,17 @@
+## 7.0.0 (2026-10-07)
+
+
+- feat!: standardize reusable workflows and check names (#100)
+- Add reusable pull-request.yml, publish.yml, release.yml, javascript-pull-request.yml and javascript-publish.yml.
+- Rename terraform-deploy.yml and terraform-destroy.yml to deploy.yml and destroy.yml, and remove nextjs-pull-request.yml in favor of javascript-pull-request.yml.
+- Rename nextjs-publish.yml to javascript-application-publish.yml and actions/nextjs/publish to actions/application/publish, and rebuild the workflow on javascript-publish.yml.
+- Rename the repository's own workflows to self-pull-request.yml and self-publish.yml.
+- Visual Tests gates the release in javascript-publish.yml when it is enabled, instead of running in parallel with it.
+- BREAKING CHANGE: terraform-deploy.yml, terraform-destroy.yml and nextjs-publish.yml are renamed to deploy.yml, destroy.yml and javascript-application-publish.yml, and actions/nextjs/publish is renamed to actions/application/publish.
+- BREAKING CHANGE: nextjs-pull-request.yml and actions/nextjs/quality-gate are removed; use javascript-pull-request.yml and actions/javascript/quality-gate.
+- BREAKING CHANGE: reusable pull request jobs are named Core, Expo and Visual Tests; with a caller job named Quality Gate, the required checks become Quality Gate / Core, Quality Gate / Expo and Quality Gate / Visual Tests. See the v7 migration guide in the README.
+- Co-authored-by: Cursor <cursoragent@cursor.com>
+
 ## 6.0.1 (2026-10-02)
 
 
