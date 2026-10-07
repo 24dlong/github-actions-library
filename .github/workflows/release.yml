@@ -1,0 +1,68 @@
+# Reusable release workflow for Terraform GitOps repositories. Not run in this
+# repository: on.workflow_call only.
+#
+# 1. version: bumps the version (publish.yml).
+# 2. request-deployment: when a version was created, opens a pull request that
+#    bumps environments/<environment>/deployed.json to it. Planning and applying
+#    then happen in the caller's deploy workflows (deploy.yml).
+#
+# The GitHub App must be able to bypass branch protection on the default
+# branch, push commits, create tags, and open pull requests.
+#
+# The caller job must grant `contents: write` and `pull-requests: write`.
+
+name: Release
+
+on:
+  workflow_call:
+    inputs:
+      github-app-client-id:
+        description: Client ID of the GitHub App used to bump the version and open the deployment pull request.
+        required: true
+        type: string
+      environment:
+        description: Environment to request a deployment for, matching environments/<environment>/.
+        required: false
+        type: string
+        default: production
+      base-branch:
+        description: Branch the deployment pull request targets.
+        required: false
+        type: string
+        default: main
+    secrets:
+      github-app-private-key:
+        description: Private key of the GitHub App.
+        required: true
+    outputs:
+      version:
+        description: Version created. Empty if nothing was released.
+        value: ${{ jobs.version.outputs.version }}
+
+jobs:
+  version:
+    name: Create Version
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish.yml
+    with:
+      github-app-client-id: ${{ inputs.github-app-client-id }}
+    secrets:
+      github-app-private-key: ${{ secrets.github-app-private-key }}
+
+  request-deployment:
+    name: Request Deployment
+    needs: version
+    if: needs.version.outputs.version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: 24dlong/github-actions-library/actions/terraform/deployment-pr@v7
+        with:
+          environment: ${{ inputs.environment }}
+          ref: ${{ needs.version.outputs.version }}
+          github-app-client-id: ${{ inputs.github-app-client-id }}
+          github-app-private-key: ${{ secrets.github-app-private-key }}
+          base-branch: ${{ inputs.base-branch }}

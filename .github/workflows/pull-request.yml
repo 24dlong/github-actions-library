@@ -1,13 +1,29 @@
-name: Pull Request Workflow
+# Reusable pull request quality gate for any repository whose checks run
+# through make (lint, and test when present). Not run in this repository:
+# on.workflow_call only.
+#
+# Callers name their job `Quality Gate` so the reported check is
+# `Quality Gate / Core`, the same for every stack:
+#
+#   jobs:
+#     quality-gate:
+#       name: Quality Gate
+#       permissions:
+#         contents: read
+#       uses: 24dlong/github-actions-library/.github/workflows/pull-request.yml@v7
+#
+# The caller job must grant `contents: read`.
+
+name: Pull Request
 
 on:
-  pull_request:
-    branches:
-      - main
+  workflow_call:
 
 jobs:
-  quality-gate:
+  core:
+    name: Core
     runs-on: ubuntu-latest
-    name: Quality Gate | Core
+    permissions:
+      contents: read
     steps:
-      - uses: 24dlong/github-actions-library/actions/quality-gate@v6
+      - uses: 24dlong/github-actions-library/actions/quality-gate@v7

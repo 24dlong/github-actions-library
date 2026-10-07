@@ -49,7 +49,7 @@ runs:
         token: ${{ steps.app-token.outputs.token }}
 
     - name: Setup JavaScript Environment
-      uses: 24dlong/github-actions-library/actions/javascript/setup-no-install@v6
+      uses: 24dlong/github-actions-library/actions/javascript/setup-no-install@v7
       with:
         codeartifact-aws-account-id: ${{ inputs.codeartifact-aws-account-id }}
         codeartifact-aws-region: ${{ inputs.codeartifact-aws-region }}
@@ -71,7 +71,7 @@ runs:
 
     - name: Commit Expo Dependency Updates
       id: commit
-      uses: 24dlong/github-actions-library/actions/javascript/commit@v6
+      uses: 24dlong/github-actions-library/actions/javascript/commit@v7
       with:
         github-app-slug: ${{ steps.app-token.outputs.app-slug }}
         github-token: ${{ steps.app-token.outputs.token }}

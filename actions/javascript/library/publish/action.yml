@@ -39,7 +39,7 @@ runs:
   steps:
     - name: Publish
       id: publish
-      uses: 24dlong/github-actions-library/actions/javascript/publish@v6
+      uses: 24dlong/github-actions-library/actions/javascript/publish@v7
       with:
         github-token: ${{ inputs.github-token }}
         codeartifact-aws-account-id: ${{ inputs.codeartifact-aws-account-id }}

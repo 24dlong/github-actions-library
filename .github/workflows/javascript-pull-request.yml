@@ -1,5 +1,12 @@
-# Reusable pull request quality gate for Next.js application repositories.
-# Not run in this repository: on.workflow_call only.
+# Reusable pull request quality gate for JavaScript repositories (pnpm, with
+# CodeArtifact). Not run in this repository: on.workflow_call only.
+#
+# Always runs `Core`. `Expo` runs when `expo-working-directory` is set, and
+# `Visual Tests` runs when `visual-tests` is true (also pass
+# `chromatic-project-token`).
+#
+# Callers name their job `Quality Gate` so the reported checks are
+# `Quality Gate / Core`, `Quality Gate / Expo` and `Quality Gate / Visual Tests`.
 #
 # Reads these caller repository variables (all CodeArtifact):
 #   AWS_CODE_ARTIFACT_ACCOUNT_ID, AWS_REGION, AWS_ROLE_TO_ASSUME,
@@ -7,7 +14,7 @@
 #
 # The caller job must grant `id-token: write` and `contents: read`.
 
-name: Next.js Pull Request
+name: JavaScript Pull Request
 
 on:
   workflow_call:
@@ -19,16 +26,25 @@ on:
         required: false
         type: string
         default: ""
+      visual-tests:
+        description: Run Storybook doctor and Chromatic visual tests.
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      chromatic-project-token:
+        description: Chromatic project token. Required when `visual-tests` is true.
+        required: false
 
 jobs:
   core:
-    name: Quality Gate | Core
+    name: Core
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
     steps:
-      - uses: 24dlong/github-actions-library/actions/nextjs/quality-gate@v6
+      - uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v7
         with:
           codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
           codeartifact-aws-region: ${{ vars.AWS_REGION }}
@@ -38,16 +54,34 @@ jobs:
           codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
 
   expo:
-    name: Quality Gate | Expo
+    name: Expo
     if: inputs.expo-working-directory != ''
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
     steps:
-      - uses: 24dlong/github-actions-library/actions/javascript/expo/quality-gate@v6
+      - uses: 24dlong/github-actions-library/actions/javascript/expo/quality-gate@v7
         with:
           working-directory: ${{ inputs.expo-working-directory }}
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
+
+  visual-tests:
+    name: Visual Tests
+    if: inputs.visual-tests
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: 24dlong/github-actions-library/actions/javascript/visual-tests@v7
+        with:
+          chromatic-project-token: ${{ secrets.chromatic-project-token }}
           codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
           codeartifact-aws-region: ${{ vars.AWS_REGION }}
           codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}

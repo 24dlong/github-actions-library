@@ -1,6 +1,6 @@
-name: Next.js Publish
+name: Application Publish
 description: >-
-  Deploys a released version of a Next.js application: builds and pushes its
+  Deploys a released version of a containerized application: builds and pushes its
   container image to ECR tagged with the version, then opens a pull request in
   the infra repository setting image_tag for the target environment. ECR and
   CodeArtifact are configured separately and may live in different AWS accounts.
@@ -80,7 +80,7 @@ runs:
   steps:
     - name: Publish Image
       id: image
-      uses: 24dlong/github-actions-library/actions/docker/publish@v6
+      uses: 24dlong/github-actions-library/actions/docker/publish@v7
       with:
         ecr-repository-uri: ${{ inputs.ecr-repository-uri }}
         ecr-aws-role-to-assume: ${{ inputs.ecr-aws-role-to-assume }}
@@ -98,7 +98,7 @@ runs:
 
     - name: Request Deployment
       id: bump
-      uses: 24dlong/github-actions-library/actions/terraform/tfvars-bump-pr@v6
+      uses: 24dlong/github-actions-library/actions/terraform/tfvars-bump-pr@v7
       with:
         owner: ${{ inputs.infra-repository-owner }}
         repository: ${{ inputs.infra-repository }}

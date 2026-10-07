@@ -46,7 +46,7 @@ runs:
 
     - name: Get CodeArtifact Token
       id: codeartifact
-      uses: 24dlong/github-actions-library/actions/aws/codeartifact-token@v6
+      uses: 24dlong/github-actions-library/actions/aws/codeartifact-token@v7
       with:
         codeartifact-aws-account-id: ${{ inputs.codeartifact-aws-account-id }}
         codeartifact-aws-region: ${{ inputs.codeartifact-aws-region }}

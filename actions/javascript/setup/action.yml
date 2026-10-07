@@ -25,7 +25,7 @@ runs:
   using: composite
   steps:
     - name: Setup JavaScript Environment
-      uses: 24dlong/github-actions-library/actions/javascript/setup-no-install@v6
+      uses: 24dlong/github-actions-library/actions/javascript/setup-no-install@v7
       with:
         codeartifact-aws-account-id: ${{ inputs.codeartifact-aws-account-id }}
         codeartifact-aws-region: ${{ inputs.codeartifact-aws-region }}
