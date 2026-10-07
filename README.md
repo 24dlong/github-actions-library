@@ -2,6 +2,84 @@
 
 A collection of reusable GitHub Actions for various technologies, designed for reusability.
 
+## Migrating from v6 to v7
+
+v7 turns each standard pipeline into a reusable workflow, so a repository keeps only its
+triggers, permissions and repository-specific inputs. Adding a check or swapping a
+technology becomes a change in this repository only.
+
+- **Workflows and actions were renamed or removed.** Update the `uses:` path in your
+  caller workflow. Inputs, secrets and behavior are unchanged, except for the check names
+  below.
+
+  | v6 | v7 |
+  | --- | --- |
+  | `.github/workflows/terraform-deploy.yml` | `.github/workflows/deploy.yml` |
+  | `.github/workflows/terraform-destroy.yml` | `.github/workflows/destroy.yml` |
+  | `.github/workflows/nextjs-publish.yml` | `.github/workflows/javascript-application-publish.yml` |
+  | `.github/workflows/nextjs-pull-request.yml` | `.github/workflows/javascript-pull-request.yml` (same `expo-working-directory` input) |
+  | `actions/nextjs/publish` | `actions/application/publish` |
+  | `actions/nextjs/quality-gate` | `actions/javascript/quality-gate` |
+
+- **Check names changed.** The reusable pull request workflows name their jobs `Core`,
+  `Expo` and `Visual Tests`. Set `name: Quality Gate` on the caller job so every stack
+  reports the same checks, and update branch protection or rulesets:
+
+  | v6 check | v7 check |
+  | --- | --- |
+  | `Quality Gate \| Core` | `Quality Gate / Core` |
+  | `Quality Gate \| Expo` | `Quality Gate / Expo` |
+  | `Quality Gate \| Visual Tests` | `Quality Gate / Visual Tests` |
+  | `quality-gate / Quality Gate \| Core` (from `nextjs-pull-request.yml`) | `Quality Gate / Core` |
+  | `quality-gate / Quality Gate \| Expo` (from `nextjs-pull-request.yml`) | `Quality Gate / Expo` |
+
+  A caller whose job is not named `Quality Gate` reports a different check and stays
+  blocked on the required one, so rename the job in the same change that updates the
+  ruleset.
+- **New reusable workflows** replace per-repository job definitions. The composite
+  actions are unchanged and remain available.
+
+  | If your workflow runs | Use instead |
+  | --- | --- |
+  | `actions/quality-gate` | `pull-request.yml` |
+  | `actions/publish` | `publish.yml` |
+  | `actions/publish`, then `actions/terraform/deployment-pr` | `release.yml` |
+  | `actions/javascript/quality-gate` (plus `expo/quality-gate`, `visual-tests`) | `javascript-pull-request.yml` |
+  | `actions/javascript/publish` or `library/publish` (plus `visual-tests`) | `javascript-publish.yml` |
+
+  `actions/javascript/library/publish` is a thin wrapper around `publish`, so
+  `javascript-publish.yml` covers both. In `javascript-publish.yml`, `Visual Tests` gates
+  the release; callers that ran `visual-tests` in parallel with `publish` now get a
+  release that waits for it.
+- `javascript-application-publish.yml` (was `nextjs-publish.yml`) now runs its release
+  through `javascript-publish.yml`. Only the `uses:` path changes for callers.
+
+## Required status checks
+
+A job that runs through a reusable workflow is reported as
+`<caller job name> / <job name in the reusable workflow>`. The workflow name and the
+event shown in the GitHub UI are not part of the check name. Every pull request workflow
+here names its jobs `Core`, `Expo` and `Visual Tests`, and callers name their job
+`Quality Gate`, so the required checks are the same for every stack:
+
+| Check | Reported when |
+| --- | --- |
+| `Quality Gate / Core` | always |
+| `Quality Gate / Expo` | `javascript-pull-request.yml` with `expo-working-directory` set |
+| `Quality Gate / Visual Tests` | `javascript-pull-request.yml` with `visual-tests: true` |
+
+```yaml
+jobs:
+  quality-gate:
+    name: Quality Gate # required: it is part of the check name
+    permissions:
+      contents: read
+    uses: 24dlong/github-actions-library/.github/workflows/pull-request.yml@v7
+```
+
+Require `Quality Gate / Core` everywhere, and add `Expo` and `Visual Tests` for
+repositories that run them.
+
 ## Migrating from v5 to v6
 
 - **All action inputs are kebab-case.** AWS inputs are prefixed with the service they
@@ -55,7 +133,7 @@ Requires a Makefile with the following commands implemented:
 - `make build`: Builds the project.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v6
+uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v7
 with:
   codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
   codeartifact-aws-region: ${{ vars.AWS_REGION }}
@@ -76,7 +154,7 @@ the base Quality Gate, so run it as a separate job next to it.
 Requires `make setup-env` and `make install`.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/expo/quality-gate@v6
+uses: 24dlong/github-actions-library/actions/javascript/expo/quality-gate@v7
 with:
   working-directory: apps/mobile # optional, default .
 ```
@@ -84,7 +162,7 @@ with:
 ### Publish
 Executes the quality gate action and executes a publish command if checks pass.
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/publish@v6
+uses: 24dlong/github-actions-library/actions/javascript/publish@v7
 with:
   github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -100,7 +178,7 @@ Outputs `released` (`'true'` when `make publish` created a new `v*` tag on `HEAD
 Runs quality checks and publishes a JavaScript library to AWS CodeArtifact. A thin wrapper
 around Publish with the same inputs and outputs.
 ```yaml
-uses: 24dlong/github-actions-library/actions/javascript/library/publish@v6
+uses: 24dlong/github-actions-library/actions/javascript/library/publish@v7
 with:
   github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -108,6 +186,67 @@ with:
 In addition to the Makefile requirements for the Quality Gate action, a `make publish`
 command must also be implemented. In the case of the `library/publish` action, this
 command should also publish the library to CodeArtifact. The action handles authentication.
+
+### JavaScript Reusable Workflows
+Callers keep their triggers, permissions and inputs; the jobs live here. Both workflows
+read the six CodeArtifact repository variables (`AWS_CODE_ARTIFACT_ACCOUNT_ID`,
+`AWS_REGION`, `AWS_ROLE_TO_ASSUME`, `AWS_CODE_ARTIFACT_DOMAIN`,
+`AWS_CODE_ARTIFACT_REPOSITORY`, `REGISTRY_NAMESPACE`) from the calling repository.
+
+#### JavaScript Pull Request
+Runs `Core` (the JavaScript Quality Gate), plus `Expo` when `expo-working-directory` is
+set and `Visual Tests` when `visual-tests` is true. Name the caller job
+`Quality Gate` (see Required status checks).
+
+```yaml
+# .github/workflows/pull-request.yml
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality-gate:
+    name: Quality Gate
+    permissions:
+      id-token: write
+      contents: read
+    uses: 24dlong/github-actions-library/.github/workflows/javascript-pull-request.yml@v7
+    with:
+      expo-working-directory: apps/mobile # optional, runs Quality Gate / Expo
+      visual-tests: true # optional, runs Quality Gate / Visual Tests
+    secrets:
+      chromatic-project-token: ${{ secrets.CHROMATIC_PROJECT_TOKEN }} # with visual-tests
+```
+
+`Visual Tests` runs the Storybook doctors (`pnpm doctor:storybook:web`,
+`pnpm doctor:storybook:native`), builds the iOS Storybook (`pnpm build-storybook:ios`) and
+runs Chromatic.
+
+#### JavaScript Publish
+Runs `Release` (the JavaScript Publish action: quality gate, then `make publish`). When
+`visual-tests` is true, `Visual Tests` runs first and gates the release: if it fails,
+nothing is released. Chromatic accepts changes on the default branch. Outputs `released`
+and `version`.
+
+```yaml
+# .github/workflows/merge.yml
+on:
+  push:
+    branches: [main]
+
+jobs:
+  publish:
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+    uses: 24dlong/github-actions-library/.github/workflows/javascript-publish.yml@v7
+    with:
+      visual-tests: true # optional
+    secrets:
+      chromatic-project-token: ${{ secrets.CHROMATIC_PROJECT_TOKEN }} # with visual-tests
+```
 
 ### CodeArtifact Authentication
 The JavaScript setup actions (and therefore every JavaScript action above) assume
@@ -122,7 +261,7 @@ later steps.
 To fetch a token directly:
 
 ```yaml
-- uses: 24dlong/github-actions-library/actions/aws/codeartifact-token@v6
+- uses: 24dlong/github-actions-library/actions/aws/codeartifact-token@v7
   id: codeartifact
   with:
     codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
@@ -132,16 +271,17 @@ To fetch a token directly:
 # ${{ steps.codeartifact.outputs.token }} is masked in logs
 ```
 
-### Next.js Application Repositories
-Next.js app repositories call two reusable workflows and keep no pipeline logic of their
-own. Step logic lives in the `actions/nextjs/*` composite actions, which the workflows
-call.
+### JavaScript Application Repositories
+JavaScript application repositories (for example a Next.js app deployed as a container
+image) keep no pipeline logic of their own. Pull requests use the JavaScript Pull Request
+workflow (`javascript-pull-request.yml`, with `expo-working-directory` for monorepos that
+also contain an Expo app); merges use the JavaScript Application Publish workflow below.
+Step logic lives in the composite actions the workflows call.
 
-- `actions/nextjs/quality-gate`: the JavaScript Quality Gate today. Next.js-specific
-  checks go here.
-- `actions/nextjs/publish`: pushes the container image tagged with a released version
+- `actions/application/publish`: pushes the container image tagged with a released version
   (Publish Image to ECR, with CodeArtifact auth), then opens an `image_tag` bump pull
-  request in the infra repository (Terraform tfvars Bump Pull Request).
+  request in the infra repository (Terraform tfvars Bump Pull Request). It takes the
+  released `version` as an input and contains nothing JavaScript-specific.
 
 Both workflows read these caller repository (or GitHub Environment) variables:
 
@@ -151,33 +291,12 @@ Both workflows read these caller repository (or GitHub Environment) variables:
 | `ECR_REPOSITORY_URI`, `AWS_ROLE_ARN_ECR_PUSH` | publish | ECR only: image push. The URI's account and region can differ from CodeArtifact's. |
 | `INFRA_REPOSITORY_OWNER`, `INFRA_REPOSITORY_NAME`, `GH_WORKFLOWS_APP_CLIENT_ID` | publish | `image_tag` bump pull request |
 
-#### Next.js Pull Request
-Runs `Quality Gate | Core`, plus `Quality Gate | Expo` when `expo-working-directory` is
-set (for monorepos that also contain an Expo app).
-
-```yaml
-# .github/workflows/pull-request.yml
-on:
-  pull_request:
-    branches: [main]
-
-jobs:
-  quality-gate:
-    permissions:
-      id-token: write
-      contents: read
-    uses: 24dlong/github-actions-library/.github/workflows/nextjs-pull-request.yml@v6
-    with:
-      expo-working-directory: apps/mobile # optional
-```
-
-Status checks are reported as `quality-gate / Quality Gate | Core` (caller job name
-prefix); use that name in branch protection.
-
-#### Next.js Publish
-The `release` job runs Publish (quality gate, then `make publish`). If that cut a new
-version, the `publish` job runs `actions/nextjs/publish` on an arm64 runner in the
-`production` GitHub Environment, tagging the image with the version (no leading `v`).
+#### JavaScript Application Publish
+The `release` job runs JavaScript Publish (quality gate, then `make publish`). If that cut
+a new version, the `publish` job runs `actions/application/publish` on an arm64 runner in
+the `production` GitHub Environment, tagging the image with the version (no leading `v`).
+A different language needs its own variant that releases through its own workflow, because
+a workflow path can't be chosen by an input.
 
 ```yaml
 # .github/workflows/merge.yml
@@ -196,7 +315,7 @@ jobs:
       issues: write
       pull-requests: write
       id-token: write
-    uses: 24dlong/github-actions-library/.github/workflows/nextjs-publish.yml@v6
+    uses: 24dlong/github-actions-library/.github/workflows/javascript-application-publish.yml@v7
     with:
       dockerfile: apps/web/Dockerfile
       build-args: | # optional, extra build args
@@ -214,7 +333,7 @@ The CodeArtifact role and the ECR push role must both trust the
 Checks out the repository and runs lint checks. Not specific to any language or technology.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/quality-gate@v6
+uses: 24dlong/github-actions-library/actions/quality-gate@v7
 ```
 
 Requires a Makefile with the following commands implemented:
@@ -237,7 +356,7 @@ language or technology. All steps are skipped when triggered by its own version-
 commit (any commit message starting with `bump:`), to avoid retriggering itself.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/publish@v6
+uses: 24dlong/github-actions-library/actions/publish@v7
 with:
   github-app-client-id: ${{ vars.GH_WORKFLOWS_APP_CLIENT_ID }}
   github-app-private-key: ${{ secrets.GH_WORKFLOWS_APP_PRIVATE_KEY }}
@@ -245,6 +364,50 @@ with:
 
 The GitHub App must be able to bypass branch protection on the target branch, push
 commits, and create tags.
+
+#### Pull Request and Publish Workflows
+Reusable workflows wrapping the two actions above, for any repository whose checks run
+through make. They install no language runtime: install tools in `make setup-env` (for
+example with `mise`).
+
+`pull-request.yml` runs one job, `Core`. Name the caller job `Quality Gate`.
+
+```yaml
+# .github/workflows/pull-request.yml
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality-gate:
+    name: Quality Gate # required: it is part of the check name
+    permissions:
+      contents: read
+    uses: 24dlong/github-actions-library/.github/workflows/pull-request.yml@v7
+```
+
+`publish.yml` bumps the version and outputs `version` (empty when nothing was released).
+The caller job needs `contents: write`.
+
+```yaml
+# .github/workflows/merge.yml
+on:
+  push:
+    branches: [main]
+
+jobs:
+  publish:
+    permissions:
+      contents: write
+    uses: 24dlong/github-actions-library/.github/workflows/publish.yml@v7
+    with:
+      github-app-client-id: ${{ vars.GH_WORKFLOWS_APP_CLIENT_ID }}
+    secrets:
+      github-app-private-key: ${{ secrets.GH_WORKFLOWS_APP_PRIVATE_KEY }}
+```
 
 ### Actions for Container Images
 #### Publish Image to ECR
@@ -254,7 +417,7 @@ GitHub OIDC. Outputs the pushed `image-tag`, its `digest`, and a digest-pinned
 `image-tag` (a release version); re-publishing an existing tag fails at push.
 
 ```yaml
-- uses: 24dlong/github-actions-library/actions/docker/publish@v6
+- uses: 24dlong/github-actions-library/actions/docker/publish@v7
   id: publish
   with:
     # ECR: where the image is pushed
@@ -309,7 +472,7 @@ artifact keyed by PR number and head SHA so a later apply run can reuse the exac
 same plan. Intended to run on `pull_request`.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/terraform/plan@v6
+uses: 24dlong/github-actions-library/actions/terraform/plan@v7
 with:
   working-directory: infra
   environment: production
@@ -337,7 +500,7 @@ successful plan workflow run, downloads its saved plan artifact, and applies it 
 Intended to run on push to `main`.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/terraform/apply@v6
+uses: 24dlong/github-actions-library/actions/terraform/apply@v7
 with:
   working-directory: production
   aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_APPLY }}
@@ -363,7 +526,7 @@ be called both for a repository's lowest environment on every merge to `main`, a
 later by a promotion workflow for upper environments.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/terraform/deployment-pr@v6
+uses: 24dlong/github-actions-library/actions/terraform/deployment-pr@v7
 with:
   environment: production
   ref: ${{ github.sha }}
@@ -385,7 +548,7 @@ live in a different org than the caller. Idempotent: if the variable already has
 requested value, no branch or pull request is created.
 
 ```yaml
-uses: 24dlong/github-actions-library/actions/terraform/tfvars-bump-pr@v6
+uses: 24dlong/github-actions-library/actions/terraform/tfvars-bump-pr@v7
 with:
   owner: my-org # optional, default is the calling repository's owner
   repository: frontend-infra
@@ -406,8 +569,37 @@ Merging the pull request only changes tfvars. Deploying it still goes through th
 repository's own GitOps trigger (`environments/<env>/deployed.json`), so that repository's
 merge workflow must request a deployment when tfvars change.
 
+#### Release
+Reusable workflow (`release.yml`) for Terraform GitOps repositories. It runs Publish
+(`publish.yml`, job `Create Version`) and, when a version was created, Terraform
+Deployment Pull Request (job `Request Deployment`) for `environment` (default
+`production`) against `base-branch` (default `main`). Planning and applying then happen in
+the repository's Deploy workflows. The caller job needs `contents: write` and
+`pull-requests: write`. Outputs `version`.
+
+```yaml
+# .github/workflows/merge.yml
+on:
+  push:
+    branches: [main]
+    paths:
+      - infra/**
+
+jobs:
+  release:
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: 24dlong/github-actions-library/.github/workflows/release.yml@v7
+    with:
+      github-app-client-id: ${{ vars.GH_WORKFLOWS_APP_CLIENT_ID }}
+      environment: production # optional
+    secrets:
+      github-app-private-key: ${{ secrets.GH_WORKFLOWS_APP_PRIVATE_KEY }}
+```
+
 #### Terraform GitOps Deploy
-Reusable workflow that detects which `environments/<env>/deployed.json` files
+Reusable workflow (`deploy.yml`) that detects which `environments/<env>/deployed.json` files
 changed, then fans out one job per environment. Each job sets
 `environment: <env>` so that GitHub Environment variables and required
 reviewers apply, then runs Terraform Plan (on pull request) or Terraform Apply
@@ -458,7 +650,7 @@ permissions:
 
 jobs:
   plan:
-    uses: 24dlong/github-actions-library/.github/workflows/terraform-deploy.yml@v6
+    uses: 24dlong/github-actions-library/.github/workflows/deploy.yml@v7
     permissions:
       id-token: write
       contents: read
@@ -487,7 +679,7 @@ permissions:
 
 jobs:
   apply:
-    uses: 24dlong/github-actions-library/.github/workflows/terraform-deploy.yml@v6
+    uses: 24dlong/github-actions-library/.github/workflows/deploy.yml@v7
     permissions:
       id-token: write
       contents: read
@@ -502,14 +694,14 @@ jobs:
 ```
 
 `plan-workflow-file` must be the **caller** workflow file name (the wrapper
-above), not `terraform-deploy.yml`. Plan artifacts attach to the caller run,
+above), not `deploy.yml`. Plan artifacts attach to the caller run,
 and Terraform Apply looks up that run by workflow file name.
 
 The caller must grant permissions on the `uses:` job; reusable workflows cannot
 escalate them. That permission block does not grow with environment count.
 
 #### Terraform Destroy
-Reusable workflow that destroys **application** Terraform (`infra/`) after a
+Reusable workflow (`destroy.yml`) that destroys **application** Terraform (`infra/`) after a
 typed confirmation and a GitHub Environment approval. Composite actions
 cannot own this graph: they cannot declare jobs or `environment:`.
 
@@ -569,7 +761,7 @@ permissions:
 
 jobs:
   destroy:
-    uses: 24dlong/github-actions-library/.github/workflows/terraform-destroy.yml@v6
+    uses: 24dlong/github-actions-library/.github/workflows/destroy.yml@v7
     permissions:
       id-token: write
       contents: read
@@ -589,14 +781,14 @@ Composites used by the destroy reusable workflow. Prefer calling the
 reusable workflow rather than these directly.
 
 ```yaml
-- uses: 24dlong/github-actions-library/actions/terraform/plan-destroy@v6
+- uses: 24dlong/github-actions-library/actions/terraform/plan-destroy@v7
   with:
     working-directory: infra
     environment: production
     aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_PLAN }}
     aws-region: us-east-2
 
-- uses: 24dlong/github-actions-library/actions/terraform/apply-destroy@v6
+- uses: 24dlong/github-actions-library/actions/terraform/apply-destroy@v7
   with:
     working-directory: infra
     environment: production
@@ -611,7 +803,7 @@ GitOps Deploy reusable workflow; also usable on its own if a repo needs a
 custom job graph.
 
 ```yaml
-- uses: 24dlong/github-actions-library/actions/terraform/detect-deploy-targets@v6
+- uses: 24dlong/github-actions-library/actions/terraform/detect-deploy-targets@v7
   id: detect
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}

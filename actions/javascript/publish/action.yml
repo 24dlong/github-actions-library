@@ -43,7 +43,7 @@ runs:
       # version of composite action called, or passing any variable to the uses parameter. Since this will
       # only be used internally, taking this as the lesser of two evils, rather than duplicating the
       # quality-gate steps here.
-      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v6
+      uses: 24dlong/github-actions-library/actions/javascript/quality-gate@v7
       with:
         codeartifact-aws-account-id: ${{ inputs.codeartifact-aws-account-id }}
         codeartifact-aws-region: ${{ inputs.codeartifact-aws-region }}

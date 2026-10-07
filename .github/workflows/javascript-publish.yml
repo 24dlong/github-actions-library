@@ -1,0 +1,88 @@
+# Reusable publish workflow for JavaScript repositories (pnpm, with
+# CodeArtifact). Not run in this repository: on.workflow_call only.
+#
+# Release: quality gate, then the caller's `make publish` (e.g.
+# semantic-release). When `visual-tests` is true (also pass
+# `chromatic-project-token`), Visual Tests runs first and gates the release: a
+# failed Visual Tests job means nothing is released.
+#
+# Reads these caller repository variables (all CodeArtifact):
+#   AWS_CODE_ARTIFACT_ACCOUNT_ID, AWS_REGION, AWS_ROLE_TO_ASSUME,
+#   AWS_CODE_ARTIFACT_DOMAIN, AWS_CODE_ARTIFACT_REPOSITORY, REGISTRY_NAMESPACE
+#
+# The caller job must grant `contents: write`, `issues: write`,
+# `pull-requests: write` and `id-token: write`.
+
+name: JavaScript Publish
+
+on:
+  workflow_call:
+    inputs:
+      visual-tests:
+        description: Run Storybook doctor and Chromatic visual tests (accepts changes on the default branch).
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      chromatic-project-token:
+        description: Chromatic project token. Required when `visual-tests` is true.
+        required: false
+    outputs:
+      released:
+        description: "'true' if a new version was released, otherwise 'false'."
+        value: ${{ jobs.release.outputs.released }}
+      version:
+        description: Released version without the leading v. Empty if nothing was released.
+        value: ${{ jobs.release.outputs.version }}
+
+jobs:
+  visual-tests:
+    name: Visual Tests
+    if: inputs.visual-tests
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: 24dlong/github-actions-library/actions/javascript/visual-tests@v7
+        with:
+          chromatic-project-token: ${{ secrets.chromatic-project-token }}
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
+
+  release:
+    name: Release
+    needs: visual-tests
+    # Visual Tests is skipped when `visual-tests` is false; run the release then
+    # too, but never after Visual Tests failed.
+    if: ${{ !cancelled() && needs.visual-tests.result != 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+    outputs:
+      released: ${{ steps.publish.outputs.released }}
+      version: ${{ steps.publish.outputs.version }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Release
+        id: publish
+        uses: 24dlong/github-actions-library/actions/javascript/publish@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}

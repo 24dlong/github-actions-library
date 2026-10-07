@@ -28,7 +28,7 @@ runs:
       uses: actions/checkout@v7
 
     - name: Setup JavaScript
-      uses: 24dlong/github-actions-library/actions/javascript/setup@v6
+      uses: 24dlong/github-actions-library/actions/javascript/setup@v7
       with:
         codeartifact-aws-account-id: ${{ inputs.codeartifact-aws-account-id }}
         codeartifact-aws-region: ${{ inputs.codeartifact-aws-region }}

@@ -1,7 +1,9 @@
-# Reusable publish workflow for Next.js application repositories.
+# Reusable publish workflow for JavaScript application repositories (pnpm, with
+# CodeArtifact, deployed as a container image).
 # Not run in this repository: on.workflow_call only.
 #
-# 1. release: quality gate, then the caller's `make publish` (semantic-release).
+# 1. release: JavaScript Publish (javascript-publish.yml): quality gate, then
+#    the caller's `make publish` (semantic-release).
 # 2. publish: only when a new version was released. Builds and pushes the
 #    container image tagged with that version, then opens an image_tag bump
 #    pull request in the infra repository.
@@ -18,7 +20,7 @@
 # The caller job must grant `contents: write`, `issues: write`,
 # `pull-requests: write` and `id-token: write`.
 
-name: Next.js Publish
+name: JavaScript Application Publish
 
 on:
   workflow_call:
@@ -65,32 +67,12 @@ on:
 jobs:
   release:
     name: Release
-    runs-on: ubuntu-latest
     permissions:
       contents: write
       issues: write
       pull-requests: write
       id-token: write
-    outputs:
-      released: ${{ steps.publish.outputs.released }}
-      version: ${{ steps.publish.outputs.version }}
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Release
-        id: publish
-        uses: 24dlong/github-actions-library/actions/javascript/publish@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
-          codeartifact-aws-region: ${{ vars.AWS_REGION }}
-          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
-          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
-          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
-          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
+    uses: ./.github/workflows/javascript-publish.yml
 
   publish:
     name: Publish
@@ -102,7 +84,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: 24dlong/github-actions-library/actions/nextjs/publish@v6
+      - uses: 24dlong/github-actions-library/actions/application/publish@v7
         with:
           version: ${{ needs.release.outputs.version }}
           dockerfile: ${{ inputs.dockerfile }}

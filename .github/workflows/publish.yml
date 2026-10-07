@@ -1,0 +1,41 @@
+# Reusable version-bump workflow for any repository. Bumps the version with
+# commitizen, tags it, and moves the major version tag. Not run in this
+# repository: on.workflow_call only.
+#
+# The GitHub App must be able to bypass branch protection on the default
+# branch, push commits, and create tags.
+#
+# The caller job must grant `contents: write`.
+
+name: Publish
+
+on:
+  workflow_call:
+    inputs:
+      github-app-client-id:
+        description: Client ID of the GitHub App used to push the version bump.
+        required: true
+        type: string
+    secrets:
+      github-app-private-key:
+        description: Private key of the GitHub App.
+        required: true
+    outputs:
+      version:
+        description: Version bumped to. Empty if nothing was released.
+        value: ${{ jobs.publish.outputs.version }}
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.publish.outputs.version }}
+    steps:
+      - id: publish
+        uses: 24dlong/github-actions-library/actions/publish@v7
+        with:
+          github-app-client-id: ${{ inputs.github-app-client-id }}
+          github-app-private-key: ${{ secrets.github-app-private-key }}
