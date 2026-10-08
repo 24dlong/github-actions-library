@@ -1,3 +1,9 @@
+## 7.0.2 (2026-10-08)
+
+
+- docs: add ARCHITECTURE.md explaining the repository's design philosophy (#102)
+- Co-authored-by: Cursor <cursoragent@cursor.com>
+
 ## 7.0.1 (2026-10-08)
 
 
