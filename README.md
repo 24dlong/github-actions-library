@@ -2,6 +2,10 @@
 
 A collection of reusable GitHub Actions for various technologies, designed for reusability.
 
+Contributing a workflow, action, input or check? Read [ARCHITECTURE.md](ARCHITECTURE.md)
+first. It explains the hub-and-spoke design, when to use an action vs a reusable workflow,
+naming conventions, and why check names are a contract with branch protection.
+
 ## Migrating from v6 to v7
 
 v7 turns each standard pipeline into a reusable workflow, so a repository keeps only its
