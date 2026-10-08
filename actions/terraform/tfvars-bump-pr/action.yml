@@ -148,7 +148,7 @@ runs:
         PR_URL="$(gh pr create \
           --base "$BASE_BRANCH" \
           --head "$BRANCH_NAME" \
-          --title "Bump ${ENVIRONMENT} ${VARIABLE}" \
+          --title "chore(deploy): bump ${ENVIRONMENT} ${VARIABLE}" \
           --body "Sets \`${VARIABLE}\` in \`${TFVARS_FILE}\` to:
 
         \`\`\`

@@ -571,7 +571,10 @@ the caller's workspace is untouched.
 
 Merging the pull request only changes tfvars. Deploying it still goes through the target
 repository's own GitOps trigger (`environments/<env>/deployed.json`), so that repository's
-merge workflow must request a deployment when tfvars change.
+merge workflow must request a deployment when tfvars change. The commit and pull request
+title are `chore(deploy): bump <environment> <variable>` so that a squash merge still
+produces a conventional commit that the infra repository's version bump picks up (which
+in turn opens the deployment pull request).
 
 #### Release
 Reusable workflow (`release.yml`) for Terraform GitOps repositories. It runs Publish
