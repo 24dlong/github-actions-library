@@ -1,3 +1,9 @@
+## 7.0.1 (2026-10-08)
+
+
+- chore: use shared workflows for the library's own CI (#101)
+- Co-authored-by: Cursor <cursoragent@cursor.com>
+
 ## 7.0.0 (2026-10-07)
 
 
