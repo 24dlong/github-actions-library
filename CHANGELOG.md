@@ -1,3 +1,9 @@
+## 7.0.3 (2026-10-08)
+
+
+- fix: use a conventional commit title for tfvars bump pull requests (#103)
+- Co-authored-by: Cursor <cursoragent@cursor.com>
+
 ## 7.0.2 (2026-10-08)
 
 
