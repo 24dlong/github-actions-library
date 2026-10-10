@@ -470,10 +470,12 @@ The role needs `ecr:GetAuthorizationToken` plus, scoped to the repository,
 
 ### Actions for Terraform Repositories
 #### Terraform Plan
-Runs `terraform plan` for a given root module, comments the rendered plan on the pull
+Runs `make plan ENV=<environment> INFRA_DIR=<working-directory>
+TF_FLAGS="-lock=false -out=tfplan"`, comments the rendered plan on the pull
 request (headed `Terraform plan for <environment>`), and uploads the plan as a build
 artifact keyed by PR number and head SHA so a later apply run can reuse the exact
-same plan. Intended to run on `pull_request`.
+same plan. Intended to run on `pull_request`. The consumer Makefile must implement
+`make plan` (see [The Makefile contract](ARCHITECTURE.md#the-makefile-contract)).
 
 ```yaml
 uses: 24dlong/github-actions-library/actions/terraform/plan@v7
@@ -492,21 +494,24 @@ triggering event's ref (the default). For GitOps deploys driven by
 `environments/<env>/deployed.json`, pass the **pinned sha** from that file, not a
 moving branch name like `main`.
 
-`var-file` is passed straight through as `-var-file`. Omit it to plan with only
-`variables.tf` defaults. Terraform variable overrides belong in a git-tracked
+`var-file` is passed to `make plan` as `VAR_FILE`, overriding the Makefile's own
+value. Omit it to use the Makefile's default. Terraform variable overrides belong in a git-tracked
 `.tfvars` file (reviewable in the plan output itself) rather than as GitHub
 Environment variables -- see the Terraform GitOps Deploy section below for why
 backend/role configuration is treated differently.
 
 #### Terraform Apply
 Resolves the pull request merged into the triggering commit, finds the matching
-successful plan workflow run, downloads its saved plan artifact, and applies it as-is.
-Intended to run on push to `main`.
+successful plan workflow run, downloads its saved plan artifact, and applies it as-is
+with `make apply ENV=<environment> INFRA_DIR=<working-directory> PLAN_FILE=tfplan`.
+Intended to run on push to `main`. The consumer Makefile must implement `make apply`
+with `PLAN_FILE` support.
 
 ```yaml
 uses: 24dlong/github-actions-library/actions/terraform/apply@v7
 with:
-  working-directory: production
+  working-directory: infra
+  environment: production
   aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_APPLY }}
   aws-region: us-east-2
   github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -630,7 +635,7 @@ Environment variable):
   the GitHub Environment name) — the GitOps trigger.
 - `environments/<env>/terraform.tfvars` — Terraform variable overrides for
   that environment (e.g. `environment`, resource naming, tags). Passed to
-  Terraform Plan automatically as `-var-file`. Terraform Apply does not need
+  Terraform Plan automatically as `VAR_FILE`. Terraform Apply does not need
   it: it replays the saved binary plan, which already encodes the values
   used to produce it.
 - GitHub Environment `<env>` variables: `AWS_ROLE_ARN_PLAN`,
