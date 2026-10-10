@@ -1,3 +1,9 @@
+## 7.0.4 (2026-10-10)
+
+
+- fix: run terraform plan and apply through the consumer Makefile (#104)
+- Co-authored-by: Cursor <cursoragent@cursor.com>
+
 ## 7.0.3 (2026-10-08)
 
 
