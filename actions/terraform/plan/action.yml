@@ -1,16 +1,17 @@
 name: Plan Changes
 description: >-
-  Runs terraform plan for a working directory, posts the rendered plan as a
+  Runs `make plan` for a working directory, posts the rendered plan as a
   pull request comment labeled with the target environment, and uploads the
   plan as a build artifact so a later workflow run can apply the exact same
-  plan after merge.
+  plan after merge. The consumer Makefile must implement `make plan`
+  (ENV, INFRA_DIR, TF_FLAGS).
 
 inputs:
   working-directory:
-    description: Path to the Terraform root module to plan (e.g. "infra").
+    description: Path to the Terraform root module to plan (e.g. "infra"). Passed as INFRA_DIR.
     required: true
   environment:
-    description: Environment name being planned (e.g. "production"). Shown in the pull request comment.
+    description: Environment name being planned (e.g. "production"). Passed as ENV and shown in the pull request comment.
     required: true
   aws-role-to-assume:
     description: ARN of the AWS IAM role to assume for the plan (read-only credentials).
@@ -31,9 +32,9 @@ inputs:
     default: ""
   var-file:
     description: >-
-      Path to a .tfvars file to pass as -var-file (e.g.
-      environments/<env>/terraform.tfvars). Omit to plan with only
-      variables.tf defaults.
+      Path to a .tfvars file (e.g. environments/<env>/terraform.tfvars),
+      passed to `make plan` as VAR_FILE. Omit to use the Makefile's own
+      VAR_FILE.
     required: false
     default: ""
 
@@ -55,21 +56,19 @@ runs:
         role-to-assume: ${{ inputs.aws-role-to-assume }}
         aws-region: ${{ inputs.aws-region }}
 
-    - name: Terraform init
-      shell: bash
-      run: mise exec -- terraform -chdir=${{ inputs.working-directory }} init -input=false
-
     - name: Terraform plan
       shell: bash
       env:
-        VAR_FILE: ${{ inputs.var-file }}
+        PLAN_ENV: ${{ inputs.environment }}
+        PLAN_DIR: ${{ inputs.working-directory }}
+        PLAN_VAR_FILE: ${{ inputs.var-file }}
       run: |
         set -euo pipefail
-        args=(-lock=false -out=tfplan)
-        if [ -n "$VAR_FILE" ]; then
-          args+=(-var-file="$VAR_FILE")
+        args=(ENV="$PLAN_ENV" INFRA_DIR="$PLAN_DIR" TF_FLAGS="-lock=false -out=tfplan")
+        if [ -n "$PLAN_VAR_FILE" ]; then
+          args+=(VAR_FILE="$PLAN_VAR_FILE")
         fi
-        mise exec -- terraform -chdir=${{ inputs.working-directory }} plan "${args[@]}"
+        make plan "${args[@]}"
 
     - name: Render plan text
       shell: bash
