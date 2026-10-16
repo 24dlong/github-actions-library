@@ -132,6 +132,8 @@ lets one generic workflow serve many technologies.
 | `test` | Generic and JavaScript quality gates | Tests. **Optional in the generic gate** (skipped when the target is absent); required by the JavaScript gate |
 | `build` | JavaScript quality gate | Verify the project builds |
 | `publish` | `actions/javascript/publish` | Create the release. Receives `GITHUB_TOKEN`; the generic `publish.yml` uses commitizen instead and needs no target |
+| `package` | `actions/javascript/expo/build` | Produce the deployable artifact. Required only for `expo-application-publish.yml`. Receives `PLATFORM` (`ios` or `android`), `PROFILE`, optional `OUTPUT` (exact path), and optional `OUTPUT_DIR` (directory; the Makefile chooses the filename from the build profile and writes `<dir>/.artifact-path`) |
+| `submit` | `actions/javascript/expo/submit` | Submit a built artifact. Required only for `expo-application-publish.yml`. Receives `PLATFORM` and `ARTIFACT` (path relative to the app directory) |
 | `plan`, `apply` | Terraform actions | Plan and apply an environment (`ENV`, `INFRA_DIR`, `PLAN_FILE`, `TF_FLAGS`) |
 
 Why `make`:
@@ -272,6 +274,8 @@ DRY has limits. Do **not** centralize:
   name. A name should still be true if the tool changes.
 - **Do not name a workflow after a framework when it is not framework-specific.**
   `nextjs-publish.yml` was renamed because nothing about it was specific to Next.js.
+  `expo-application-publish.yml` keeps the framework name because it is Expo-specific:
+  local EAS builds and store submit.
 - Use `pull-request`, `publish`, `release`, `deploy`, `destroy` consistently as the
   purpose. Do not invent synonyms.
 
