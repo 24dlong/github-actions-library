@@ -1,3 +1,9 @@
+## 7.1.0 (2026-10-17)
+
+
+- feat: add an Expo application publish workflow (#107)
+- Co-authored-by: Cursor <cursoragent@cursor.com>
+
 ## 7.0.6 (2026-10-15)
 
 
