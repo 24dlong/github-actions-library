@@ -1,3 +1,21 @@
+## 7.0.6 (2026-10-15)
+
+
+- chore(deps): update pre-commit hook commitizen-tools/commitizen to v4.19.2 (#106)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+
+## 7.0.5 (2026-10-11)
+
+
+- chore(deps): update pre-commit hook commitizen-tools/commitizen to v4.19.1 (#105)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+
+## 7.0.4 (2026-10-10)
+
+
+- fix: run terraform plan and apply through the consumer Makefile (#104)
+- Co-authored-by: Cursor <cursoragent@cursor.com>
+
 ## 7.0.3 (2026-10-08)
 
 

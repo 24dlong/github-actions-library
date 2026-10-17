@@ -2,11 +2,16 @@ name: Apply Changes
 description: >-
   Resolves the pull request merged into this commit, downloads the Terraform
   plan artifact produced by that PR's plan workflow run, and applies it
-  as-is so the applied change exactly matches what was reviewed.
+  as-is with `make apply PLAN_FILE=tfplan` so the applied change exactly
+  matches what was reviewed. The consumer Makefile must implement
+  `make apply` with PLAN_FILE support (ENV, INFRA_DIR, PLAN_FILE).
 
 inputs:
   working-directory:
-    description: Path to the Terraform root module to apply (e.g. "production").
+    description: Path to the Terraform root module to apply (e.g. "infra"). Passed as INFRA_DIR.
+    required: true
+  environment:
+    description: Environment name being applied (e.g. "production"). Passed as ENV.
     required: true
   aws-role-to-assume:
     description: ARN of the AWS IAM role to assume for the apply (write credentials).
@@ -111,10 +116,9 @@ runs:
           --name "${{ steps.resolve.outputs.artifact_name }}" \
           --dir ${{ inputs.working-directory }}
 
-    - name: Terraform init
-      shell: bash
-      run: mise exec -- terraform -chdir=${{ inputs.working-directory }} init -input=false
-
     - name: Terraform apply saved plan
       shell: bash
-      run: mise exec -- terraform -chdir=${{ inputs.working-directory }} apply -input=false tfplan
+      env:
+        APPLY_ENV: ${{ inputs.environment }}
+        APPLY_DIR: ${{ inputs.working-directory }}
+      run: make apply ENV="$APPLY_ENV" INFRA_DIR="$APPLY_DIR" PLAN_FILE=tfplan

@@ -124,6 +124,7 @@ jobs:
         uses: 24dlong/github-actions-library/actions/terraform/apply@v7
         with:
           working-directory: ${{ inputs.working-directory }}
+          environment: ${{ matrix.environment }}
           aws-role-to-assume: ${{ vars.AWS_ROLE_ARN_APPLY }}
           aws-region: ${{ vars.STATE_REGION }}
           github-app-client-id: ${{ inputs.github-app-client-id }}
