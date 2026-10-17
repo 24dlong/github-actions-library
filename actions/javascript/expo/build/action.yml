@@ -1,0 +1,184 @@
+name: Expo Build
+description: >-
+  Builds an Expo app locally (the spoke's `make package`) and uploads the
+  artifact. Checks out and installs dependencies itself, so run it as its own
+  job. `eas build --local` reinstalls in a temp copy, so this action's setup
+  must leave CodeArtifact auth in ~/.npmrc (the spoke's `make registry-auth`,
+  run by `make install`). Holds no eas flags; the spoke Makefile owns those.
+
+inputs:
+  working-directory:
+    description: Directory of the Expo project, relative to the repository root (e.g. "apps/mobile").
+    required: true
+  platform:
+    description: "Build platform: ios or android."
+    required: true
+  profile:
+    description: eas.json build profile. Production is the store profile (.ipa / .aab).
+    required: false
+    default: production
+  version:
+    description: App version, exported as APP_VERSION for app.config.ts.
+    required: true
+  expo-token:
+    description: Expo robot token (EXPO_TOKEN). Required for credentials and remote build numbers.
+    required: true
+  sentry-auth-token:
+    description: Sentry auth token (SENTRY_AUTH_TOKEN). Required so source-map upload cannot be skipped silently.
+    required: true
+  codeartifact-aws-account-id:
+    description: AWS account ID that owns the CodeArtifact domain.
+    required: true
+  codeartifact-aws-region:
+    description: AWS region of the CodeArtifact domain.
+    required: true
+  codeartifact-aws-role-to-assume:
+    description: ARN of the AWS IAM role allowed to read from CodeArtifact.
+    required: true
+  codeartifact-domain:
+    description: CodeArtifact domain name.
+    required: true
+  codeartifact-repository:
+    description: CodeArtifact repository name.
+    required: true
+  codeartifact-registry-namespace:
+    description: npm scope served by CodeArtifact (e.g. "@my-org").
+    required: true
+
+outputs:
+  artifact-path:
+    description: Built artifact path, relative to working-directory (for example dist/app.aab).
+    value: ${{ steps.package.outputs.path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout Code
+      uses: actions/checkout@v7
+
+    - name: Require tokens
+      env:
+        EXPO_TOKEN: ${{ inputs.expo-token }}
+        SENTRY_AUTH_TOKEN: ${{ inputs.sentry-auth-token }}
+      run: |
+        set -euo pipefail
+        missing=()
+        if [[ -z "${EXPO_TOKEN}" ]]; then
+          missing+=("EXPO_TOKEN")
+        fi
+        if [[ -z "${SENTRY_AUTH_TOKEN}" ]]; then
+          missing+=("SENTRY_AUTH_TOKEN")
+        fi
+        if (( ${#missing[@]} )); then
+          echo "Missing required token(s): ${missing[*]}" >&2
+          exit 1
+        fi
+      shell: bash
+
+    - name: Select Xcode
+      if: inputs.platform == 'ios'
+      run: |
+        set -euo pipefail
+        sudo xcode-select -s /Applications/Xcode_26.4.1.app
+        xcodebuild -version
+        pod --version
+        fastlane --version
+      shell: bash
+
+    - name: Install Apple WWDR G3
+      if: inputs.platform == 'ios'
+      run: |
+        set -euo pipefail
+        curl -fsSL -o /tmp/AppleWWDRCAG3.cer https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer
+        security add-certificates -k "${HOME}/Library/Keychains/login.keychain-db" /tmp/AppleWWDRCAG3.cer
+      shell: bash
+
+    - name: Cache CocoaPods
+      if: inputs.platform == 'ios'
+      uses: actions/cache@v6
+      with:
+        path: |
+          /Users/runner/Library/Caches/CocoaPods
+          /Users/runner/.cocoapods
+        key: cocoapods-${{ runner.os }}-${{ runner.arch }}-${{ inputs.working-directory }}
+
+    - name: Setup Java
+      if: inputs.platform == 'android'
+      uses: actions/setup-java@v6
+      with:
+        distribution: temurin
+        java-version: "17"
+
+    # The Gradle project is generated inside the eas temp copy. This still
+    # caches ~/.gradle, which that build uses. Wrappers are not in the repo.
+    # cache-read-only is forced off so a retry on a non-default branch keeps
+    # what a flaky dl.google.com run already downloaded.
+    - name: Setup Gradle
+      if: inputs.platform == 'android'
+      uses: gradle/actions/setup-gradle@v6
+      with:
+        validate-wrappers: false
+        cache-read-only: false
+
+    - name: Setup JavaScript
+      uses: 24dlong/github-actions-library/actions/javascript/setup@v7
+      with:
+        codeartifact-aws-account-id: ${{ inputs.codeartifact-aws-account-id }}
+        codeartifact-aws-region: ${{ inputs.codeartifact-aws-region }}
+        codeartifact-aws-role-to-assume: ${{ inputs.codeartifact-aws-role-to-assume }}
+        codeartifact-domain: ${{ inputs.codeartifact-domain }}
+        codeartifact-repository: ${{ inputs.codeartifact-repository }}
+        codeartifact-registry-namespace: ${{ inputs.codeartifact-registry-namespace }}
+
+    - name: Package
+      id: package
+      env:
+        APP_VERSION: ${{ inputs.version }}
+        EXPO_TOKEN: ${{ inputs.expo-token }}
+        SENTRY_AUTH_TOKEN: ${{ inputs.sentry-auth-token }}
+        PLATFORM: ${{ inputs.platform }}
+        PROFILE: ${{ inputs.profile }}
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+        # The Makefile names the file from eas.json and records that path.
+        make -C "${WORKING_DIRECTORY}" package \
+          PLATFORM="${PLATFORM}" \
+          PROFILE="${PROFILE}" \
+          OUTPUT_DIR=dist
+        path="$(< "${WORKING_DIRECTORY}/dist/.artifact-path")"
+        if [[ -z "${path}" || "${path}" == *$'\n'* ]]; then
+          echo "package did not report a single artifact path" >&2
+          exit 1
+        fi
+        echo "path=${path}" >> "${GITHUB_OUTPUT}"
+      shell: bash
+
+    - name: Upload build
+      uses: actions/upload-artifact@v7
+      with:
+        name: mobile-${{ inputs.platform }}-${{ inputs.version }}
+        path: ${{ inputs.working-directory }}/${{ steps.package.outputs.path }}
+        if-no-files-found: error
+
+    - name: Collect iOS gym logs
+      id: gym
+      if: always() && inputs.platform == 'ios'
+      run: |
+        set -euo pipefail
+        if [[ -d "${HOME}/Library/Logs/gym" ]]; then
+          mkdir -p gym-logs
+          cp -R "${HOME}/Library/Logs/gym/." gym-logs/
+          echo "found=true" >> "${GITHUB_OUTPUT}"
+        else
+          echo "found=false" >> "${GITHUB_OUTPUT}"
+        fi
+      shell: bash
+
+    - name: Upload gym logs
+      if: always() && steps.gym.outputs.found == 'true'
+      uses: actions/upload-artifact@v7
+      with:
+        name: mobile-ios-gym-${{ inputs.version }}
+        path: gym-logs
+        if-no-files-found: ignore

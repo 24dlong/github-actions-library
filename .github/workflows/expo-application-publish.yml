@@ -1,0 +1,186 @@
+# Reusable publish workflow for an Expo application (local EAS builds, then
+# store submit). Not run in this repository: on.workflow_call only.
+#
+# Jobs: Detect (always builds; change detection is the spoke's follow-up),
+# Android on ubuntu-24.04, iOS on macos-26 with Xcode 26.4.1, then Summary.
+# With a caller job named Mobile, the checks are Mobile / Detect, Mobile /
+# Android, Mobile / iOS and Mobile / Summary.
+#
+# Reads these caller repository (or GitHub Environment) variables, all
+# CodeArtifact: AWS_CODE_ARTIFACT_ACCOUNT_ID, AWS_REGION, AWS_ROLE_TO_ASSUME,
+# AWS_CODE_ARTIFACT_DOMAIN, AWS_CODE_ARTIFACT_REPOSITORY, REGISTRY_NAMESPACE.
+#
+# Build jobs run in `environment` (default production) so the OIDC subject is
+# repo:<owner>/<repo>:environment:<environment> and environment secrets are
+# available. The caller passes expo-token and sentry-auth-token by name from
+# EXPO_TOKEN and SENTRY_AUTH_TOKEN, including when those exist only on the
+# environment.
+#
+# The caller job must grant `id-token: write`, `contents: read` and
+# `actions: write` (artifact upload and caches).
+
+name: Expo Application Publish
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Released app version, exported to the build as APP_VERSION.
+        required: true
+        type: string
+      working-directory:
+        description: Directory of the Expo project, relative to the repository root (e.g. "apps/mobile").
+        required: true
+        type: string
+      platforms:
+        description: Comma-separated platforms to build (ios, android, or both).
+        required: false
+        type: string
+        default: ios,android
+      build-profile:
+        description: eas.json build profile. Use production for store artifacts.
+        required: false
+        type: string
+        default: production
+      submit:
+        description: Submit the artifacts to TestFlight and the Play internal track.
+        required: false
+        type: boolean
+        default: true
+      environment:
+        description: GitHub Environment for the build jobs.
+        required: false
+        type: string
+        default: production
+    secrets:
+      expo-token:
+        description: Expo robot token, passed from EXPO_TOKEN.
+        required: true
+      sentry-auth-token:
+        description: Sentry auth token, passed from SENTRY_AUTH_TOKEN.
+        required: true
+
+concurrency:
+  group: expo-publish-${{ github.repository }}-${{ inputs.working-directory }}
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    name: Detect
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+    steps:
+      - id: decide
+        # Task 5 replaces this with a comparison against the previous release tag.
+        run: echo "build=true" >> "$GITHUB_OUTPUT"
+
+  android:
+    name: Android
+    needs: detect
+    if: needs.detect.outputs.build == 'true' && contains(inputs.platforms, 'android')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+      actions: write
+    outputs:
+      artifact: ${{ steps.build.outputs.artifact-path }}
+    steps:
+      - id: build
+        uses: 24dlong/github-actions-library/actions/javascript/expo/build@v7
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          platform: android
+          profile: ${{ inputs.build-profile }}
+          version: ${{ inputs.version }}
+          expo-token: ${{ secrets.expo-token }}
+          sentry-auth-token: ${{ secrets.sentry-auth-token }}
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
+
+      - name: Submit
+        if: inputs.submit
+        uses: 24dlong/github-actions-library/actions/javascript/expo/submit@v7
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          platform: android
+          artifact: ${{ steps.build.outputs.artifact-path }}
+          expo-token: ${{ secrets.expo-token }}
+
+  ios:
+    name: iOS
+    needs: detect
+    if: needs.detect.outputs.build == 'true' && contains(inputs.platforms, 'ios')
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+      actions: write
+    outputs:
+      artifact: ${{ steps.build.outputs.artifact-path }}
+    steps:
+      - id: build
+        uses: 24dlong/github-actions-library/actions/javascript/expo/build@v7
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          platform: ios
+          profile: ${{ inputs.build-profile }}
+          version: ${{ inputs.version }}
+          expo-token: ${{ secrets.expo-token }}
+          sentry-auth-token: ${{ secrets.sentry-auth-token }}
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
+
+      - name: Submit
+        if: inputs.submit
+        uses: 24dlong/github-actions-library/actions/javascript/expo/submit@v7
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          platform: ios
+          artifact: ${{ steps.build.outputs.artifact-path }}
+          expo-token: ${{ secrets.expo-token }}
+
+  summary:
+    name: Summary
+    needs: [detect, android, ios]
+    if: always() && !cancelled() && needs.detect.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Write summary
+        env:
+          VERSION: ${{ inputs.version }}
+          PROFILE: ${{ inputs.build-profile }}
+          SUBMIT: ${{ inputs.submit }}
+          ANDROID_RESULT: ${{ needs.android.result }}
+          IOS_RESULT: ${{ needs.ios.result }}
+          ANDROID_ARTIFACT: ${{ needs.android.outputs.artifact }}
+          IOS_ARTIFACT: ${{ needs.ios.outputs.artifact }}
+        run: |
+          {
+            echo "## Expo publish"
+            echo
+            echo "- Version: \`${VERSION}\`"
+            echo "- Profile: \`${PROFILE}\`"
+            echo "- Submit: \`${SUBMIT}\`"
+            echo "- Android (${ANDROID_RESULT}): \`${ANDROID_ARTIFACT:-n/a}\`"
+            echo "- iOS (${IOS_RESULT}): \`${IOS_ARTIFACT:-n/a}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

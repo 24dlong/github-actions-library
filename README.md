@@ -332,6 +332,58 @@ jobs:
 The CodeArtifact role and the ECR push role must both trust the
 `repo:<owner>/<repo>:environment:<environment>` OIDC subject for the `publish` job.
 
+### Expo application repositories
+`expo-application-publish.yml` builds an Expo app on the runner (`eas build --local` via
+the spoke's `make package`) and optionally submits it (`make submit`). It is separate
+from JavaScript Application Publish: different runners, secrets and job graph. iOS runs
+on `macos-26` with Xcode 26.4.1 selected. Android runs on `ubuntu-24.04` with Temurin 17.
+Android `timeout-minutes` is 45; iOS is 60.
+
+The spoke's app Makefile must provide:
+
+- `package`, with `PLATFORM` (`ios` or `android`), `PROFILE`, optional `OUTPUT` (an exact
+  artifact path), and optional `OUTPUT_DIR` (a directory; the Makefile names the file
+  from the build profile and writes `<dir>/.artifact-path`).
+- `submit`, with `PLATFORM` and `ARTIFACT` (path relative to the app directory).
+
+`make install` must leave CodeArtifact auth in `~/.npmrc`. A local EAS build copies the
+repo to a temp directory and runs its own `pnpm install` there, so a repo-local `.npmrc`
+is not enough.
+
+Build jobs use the `environment` input (default `production`). The caller passes
+`expo-token` and `sentry-auth-token` from `EXPO_TOKEN` and `SENTRY_AUTH_TOKEN`. The
+caller job must grant `id-token: write`, `contents: read` and `actions: write`. Name the
+caller job `Mobile` so the checks are `Mobile / Detect`, `Mobile / Android`, `Mobile / iOS`
+and `Mobile / Summary`. `Detect` currently always builds.
+
+```yaml
+# .github/workflows/mobile-publish.yml
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        required: true
+        type: string
+
+jobs:
+  mobile:
+    name: Mobile
+    permissions:
+      id-token: write
+      contents: read
+      actions: write
+    uses: 24dlong/github-actions-library/.github/workflows/expo-application-publish.yml@v7
+    with:
+      working-directory: apps/mobile
+      version: ${{ inputs.version }}
+      # platforms, build-profile, submit and environment are optional
+    secrets:
+      expo-token: ${{ secrets.EXPO_TOKEN }}
+      sentry-auth-token: ${{ secrets.SENTRY_AUTH_TOKEN }}
+```
+
+The CodeArtifact role must trust `repo:<owner>/<repo>:environment:<environment>`.
+
 ### Generic Actions
 #### Quality Gate
 Checks out the repository and runs lint checks. Not specific to any language or technology.

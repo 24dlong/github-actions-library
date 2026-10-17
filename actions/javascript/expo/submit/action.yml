@@ -1,0 +1,42 @@
+name: Expo Submit
+description: >-
+  Submits a locally built Expo artifact (the spoke's `make submit`). Run it in
+  the same job as Expo Build, after that action: it does not check out or
+  install. The spoke Makefile chooses the submit profile (production: TestFlight
+  and the Play internal track).
+
+inputs:
+  working-directory:
+    description: Directory of the Expo project, relative to the repository root (e.g. "apps/mobile").
+    required: true
+  platform:
+    description: "Submit platform: ios or android."
+    required: true
+  artifact:
+    description: Artifact path relative to working-directory, as returned by Expo Build.
+    required: true
+  expo-token:
+    description: Expo robot token (EXPO_TOKEN).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Submit
+      env:
+        EXPO_TOKEN: ${{ inputs.expo-token }}
+        PLATFORM: ${{ inputs.platform }}
+        ARTIFACT: ${{ inputs.artifact }}
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+        if [[ -z "${EXPO_TOKEN}" ]]; then
+          echo "EXPO_TOKEN is required" >&2
+          exit 1
+        fi
+        if [[ ! -f "${WORKING_DIRECTORY}/${ARTIFACT}" ]]; then
+          echo "Artifact not found: ${WORKING_DIRECTORY}/${ARTIFACT}" >&2
+          exit 1
+        fi
+        make -C "${WORKING_DIRECTORY}" submit PLATFORM="${PLATFORM}" ARTIFACT="${ARTIFACT}"
+      shell: bash
