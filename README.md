@@ -358,7 +358,9 @@ The iOS job caches CocoaPods keyed on `pnpm-lock.yaml` (and an `ios/Podfile.lock
 app commits one), and the React Native core, dependencies and Hermes tarballs in
 `~/Library/Caches/ReactNative` keyed on `pnpm-lock.yaml`. Those caches, like the pnpm store,
 are saved right after a successful install or package step, on a key miss only, so a job
-that fails later (for example at submit) still warms the next run.
+that fails later (for example at submit) still warms the next run. The pnpm store is pruned
+(`pnpm store prune`) before it is saved, so packages from older lockfiles are not carried
+forward.
 
 `Mobile / Summary` reports each platform's build and submit separately (for example
 "Build succeeded, submit failed"), with the uploaded artifact name (`mobile-<platform>-<version>`),

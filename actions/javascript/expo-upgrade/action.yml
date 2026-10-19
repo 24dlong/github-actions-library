@@ -70,6 +70,13 @@ runs:
       run: pnpm exec expo install --fix
       shell: bash
 
+    # See actions/javascript/setup: prune before the save, never fail on it.
+    - name: Prune pnpm store
+      if: steps.setup.outputs.pnpm-cache-hit != 'true'
+      continue-on-error: true
+      run: pnpm store prune
+      shell: bash
+
     - name: Save pnpm store
       if: steps.setup.outputs.pnpm-cache-hit != 'true'
       uses: actions/cache/save@v6

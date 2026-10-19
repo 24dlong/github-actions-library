@@ -40,7 +40,16 @@ runs:
       shell: bash
 
     # Only after a successful install, and only on a key miss, so a failed or
-    # partial install never becomes the cache for this lockfile.
+    # partial install never becomes the cache for this lockfile. Prune first:
+    # a restore-keys fallback brings in an older lockfile's store, and prune
+    # drops only packages no installed project references, so the saved store
+    # stays the size of this lockfile. A failed prune still saves.
+    - name: Prune pnpm store
+      if: steps.setup.outputs.pnpm-cache-hit != 'true'
+      continue-on-error: true
+      run: pnpm store prune
+      shell: bash
+
     - name: Save pnpm store
       if: steps.setup.outputs.pnpm-cache-hit != 'true'
       uses: actions/cache/save@v6
