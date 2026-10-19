@@ -93,14 +93,19 @@ runs:
         security add-certificates -k "${HOME}/Library/Keychains/login.keychain-db" /tmp/AppleWWDRCAG3.cer
       shell: bash
 
+    # ios/ is generated inside the eas temp copy, so the repo usually has no
+    # Podfile.lock; the pnpm lockfile pins the native modules that decide the
+    # pods. A fixed key would be saved once and never refreshed.
     - name: Cache CocoaPods
       if: inputs.platform == 'ios'
       uses: actions/cache@v6
       with:
         path: |
-          /Users/runner/Library/Caches/CocoaPods
-          /Users/runner/.cocoapods
-        key: cocoapods-${{ runner.os }}-${{ runner.arch }}-${{ inputs.working-directory }}
+          ~/Library/Caches/CocoaPods
+          ~/.cocoapods
+        key: cocoapods-${{ runner.os }}-${{ runner.arch }}-${{ inputs.working-directory }}-${{ hashFiles('pnpm-lock.yaml', format('{0}/ios/Podfile.lock', inputs.working-directory)) }}
+        restore-keys: |
+          cocoapods-${{ runner.os }}-${{ runner.arch }}-${{ inputs.working-directory }}-
 
     - name: Setup Java
       if: inputs.platform == 'android'
