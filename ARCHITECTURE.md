@@ -421,6 +421,13 @@ These are the facts behind decisions above. They save a re-investigation.
 - A required check that is **skipped counts as passing**; a check that **never reports**
   blocks.
 - The caller job's `name` is part of the check name; **its absence changes the name**.
+- `actions/cache` and `actions/setup-node`'s `cache:` **save in a post step that runs only
+  when the job succeeds**. A job that fails late (a store submit after a 20-minute build)
+  never saves, so every run starts cold. Where that matters, split into
+  `actions/cache/restore` and an `actions/cache/save` step placed right after the step that
+  fills the cache, guarded by `cache-hit != 'true'` so a partial cache is never saved. The
+  JavaScript setup actions do this for the pnpm store; Expo Build does it for CocoaPods and
+  the React Native tarballs.
 - Squash-merge settings affect the changelog. Repositories that squash with commit
   messages need a single, well-formed commit per pull request.
 

@@ -49,6 +49,12 @@ outputs:
   artifact-path:
     description: Built artifact path, relative to working-directory (for example dist/app.aab).
     value: ${{ steps.package.outputs.path }}
+  artifact-name:
+    description: Name of the uploaded workflow artifact (mobile-<platform>-<version>).
+    value: ${{ steps.upload-build.outputs.artifact-id && format('mobile-{0}-{1}', inputs.platform, inputs.version) || '' }}
+  build-number:
+    description: Build number (iOS) or version code (Android) eas auto-incremented to, when it logged one.
+    value: ${{ steps.package.outputs.build-number }}
 
 runs:
   using: composite
@@ -95,10 +101,13 @@ runs:
 
     # ios/ is generated inside the eas temp copy, so the repo usually has no
     # Podfile.lock; the pnpm lockfile pins the native modules that decide the
-    # pods. A fixed key would be saved once and never refreshed.
-    - name: Cache CocoaPods
+    # pods. A fixed key would be saved once and never refreshed. Restore and
+    # save are split so a late failure (submit, in the caller's job) still
+    # keeps a cache that a successful package step filled.
+    - name: Restore CocoaPods
+      id: cocoapods-cache
       if: inputs.platform == 'ios'
-      uses: actions/cache@v6
+      uses: actions/cache/restore@v6
       with:
         path: |
           ~/Library/Caches/CocoaPods
@@ -106,6 +115,18 @@ runs:
         key: cocoapods-${{ runner.os }}-${{ runner.arch }}-${{ inputs.working-directory }}-${{ hashFiles('pnpm-lock.yaml', format('{0}/ios/Podfile.lock', inputs.working-directory)) }}
         restore-keys: |
           cocoapods-${{ runner.os }}-${{ runner.arch }}-${{ inputs.working-directory }}-
+
+    # React Native core, dependencies and Hermes tarballs, downloaded by pod
+    # install. The pnpm lockfile pins the react-native version.
+    - name: Restore React Native tarballs
+      id: react-native-cache
+      if: inputs.platform == 'ios'
+      uses: actions/cache/restore@v6
+      with:
+        path: ~/Library/Caches/ReactNative
+        key: react-native-${{ runner.os }}-${{ runner.arch }}-${{ inputs.working-directory }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: |
+          react-native-${{ runner.os }}-${{ runner.arch }}-${{ inputs.working-directory }}-
 
     - name: Setup Java
       if: inputs.platform == 'android'
@@ -147,19 +168,43 @@ runs:
       run: |
         set -euo pipefail
         # The Makefile names the file from eas.json and records that path.
+        log="${RUNNER_TEMP}/package.log"
         make -C "${WORKING_DIRECTORY}" package \
           PLATFORM="${PLATFORM}" \
           PROFILE="${PROFILE}" \
-          OUTPUT_DIR=dist
+          OUTPUT_DIR=dist 2>&1 | tee "${log}"
         path="$(< "${WORKING_DIRECTORY}/dist/.artifact-path")"
         if [[ -z "${path}" || "${path}" == *$'\n'* ]]; then
           echo "package did not report a single artifact path" >&2
           exit 1
         fi
         echo "path=${path}" >> "${GITHUB_OUTPUT}"
+        # Best effort, for the summary: eas logs the remote build number when
+        # it increments it. Empty when the profile does not auto-increment.
+        build_number="$(sed -nE 's/.*Incremented (buildNumber|versionCode) from [0-9]+ to ([0-9]+).*/\2/p' "${log}" | tail -n 1)"
+        echo "build-number=${build_number}" >> "${GITHUB_OUTPUT}"
       shell: bash
 
+    # Right after package, before submit can fail the job. Only on a key miss
+    # and only after a successful package, so a partial cache is never saved.
+    - name: Save CocoaPods
+      if: inputs.platform == 'ios' && steps.cocoapods-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: |
+          ~/Library/Caches/CocoaPods
+          ~/.cocoapods
+        key: ${{ steps.cocoapods-cache.outputs.cache-primary-key }}
+
+    - name: Save React Native tarballs
+      if: inputs.platform == 'ios' && steps.react-native-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ~/Library/Caches/ReactNative
+        key: ${{ steps.react-native-cache.outputs.cache-primary-key }}
+
     - name: Upload build
+      id: upload-build
       uses: actions/upload-artifact@v7
       with:
         name: mobile-${{ inputs.platform }}-${{ inputs.version }}

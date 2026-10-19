@@ -27,6 +27,17 @@ inputs:
     description: npm scope served by CodeArtifact (e.g. "@my-org").
     required: true
 
+outputs:
+  pnpm-store-path:
+    description: pnpm store directory, for actions/cache/save after install.
+    value: ${{ steps.pnpm-store.outputs.path }}
+  pnpm-cache-key:
+    description: Cache key for the pnpm store, for actions/cache/save after install.
+    value: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
+  pnpm-cache-hit:
+    description: "'true' when the pnpm store was restored from an exact key match."
+    value: ${{ steps.pnpm-cache.outputs.cache-hit }}
+
 runs:
   using: composite
   steps:
@@ -38,11 +49,30 @@ runs:
     - name: Setup pnpm
       uses: pnpm/action-setup@v6
 
+    # setup-node's `cache: pnpm` only saves in its post step, which runs when
+    # the whole job succeeds, so a job that fails late never saves. Restore
+    # here; actions/javascript/setup saves right after install.
     - name: Setup Node
       uses: actions/setup-node@v7
       with:
         node-version-file: .nvmrc
-        cache: pnpm
+
+    - name: Get pnpm store path
+      id: pnpm-store
+      run: |
+        set -euo pipefail
+        store="$(pnpm store path --silent)"
+        echo "path=${store}" >> "$GITHUB_OUTPUT"
+      shell: bash
+
+    - name: Restore pnpm store
+      id: pnpm-cache
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ steps.pnpm-store.outputs.path }}
+        key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: |
+          pnpm-store-${{ runner.os }}-${{ runner.arch }}-
 
     - name: Get CodeArtifact Token
       id: codeartifact

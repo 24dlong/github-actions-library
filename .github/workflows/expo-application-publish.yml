@@ -89,8 +89,14 @@ jobs:
       id-token: write
       contents: read
       actions: write
+    # Build and submit outcomes are reported apart so Summary can tell a
+    # failed submit from a failed build.
     outputs:
       artifact: ${{ steps.build.outputs.artifact-path }}
+      artifact-name: ${{ steps.build.outputs.artifact-name }}
+      build-number: ${{ steps.build.outputs.build-number }}
+      build-result: ${{ steps.build.outcome }}
+      submit-result: ${{ steps.submit.outcome }}
     steps:
       - id: build
         uses: 24dlong/github-actions-library/actions/javascript/expo/build@v7
@@ -109,6 +115,7 @@ jobs:
           codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
 
       - name: Submit
+        id: submit
         if: inputs.submit
         uses: 24dlong/github-actions-library/actions/javascript/expo/submit@v7
         with:
@@ -128,8 +135,14 @@ jobs:
       id-token: write
       contents: read
       actions: write
+    # Build and submit outcomes are reported apart so Summary can tell a
+    # failed submit from a failed build.
     outputs:
       artifact: ${{ steps.build.outputs.artifact-path }}
+      artifact-name: ${{ steps.build.outputs.artifact-name }}
+      build-number: ${{ steps.build.outputs.build-number }}
+      build-result: ${{ steps.build.outcome }}
+      submit-result: ${{ steps.submit.outcome }}
     steps:
       - id: build
         uses: 24dlong/github-actions-library/actions/javascript/expo/build@v7
@@ -148,6 +161,7 @@ jobs:
           codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
 
       - name: Submit
+        id: submit
         if: inputs.submit
         uses: 24dlong/github-actions-library/actions/javascript/expo/submit@v7
         with:
@@ -171,16 +185,68 @@ jobs:
           PROFILE: ${{ inputs.build-profile }}
           SUBMIT: ${{ inputs.submit }}
           ANDROID_RESULT: ${{ needs.android.result }}
-          IOS_RESULT: ${{ needs.ios.result }}
+          ANDROID_BUILD: ${{ needs.android.outputs.build-result }}
+          ANDROID_SUBMIT: ${{ needs.android.outputs.submit-result }}
           ANDROID_ARTIFACT: ${{ needs.android.outputs.artifact }}
+          ANDROID_ARTIFACT_NAME: ${{ needs.android.outputs.artifact-name }}
+          ANDROID_BUILD_NUMBER: ${{ needs.android.outputs.build-number }}
+          IOS_RESULT: ${{ needs.ios.result }}
+          IOS_BUILD: ${{ needs.ios.outputs.build-result }}
+          IOS_SUBMIT: ${{ needs.ios.outputs.submit-result }}
           IOS_ARTIFACT: ${{ needs.ios.outputs.artifact }}
+          IOS_ARTIFACT_NAME: ${{ needs.ios.outputs.artifact-name }}
+          IOS_BUILD_NUMBER: ${{ needs.ios.outputs.build-number }}
         run: |
+          set -euo pipefail
+          past() {
+            case "$1" in
+              success) echo succeeded ;;
+              failure) echo failed ;;
+              *) echo "$1" ;;
+            esac
+          }
+          # Args: label, job result, build outcome, submit outcome, artifact
+          # name, artifact path, build number. Prints one table row.
+          row() {
+            local label="$1" job="$2" build="$3" submit="$4" status
+            if [[ "${job}" == "skipped" ]]; then
+              build="not requested"
+              submit="n/a"
+            else
+              # Empty when the job ended before the build step reported.
+              build="${build:-${job}}"
+              if [[ "${SUBMIT}" != "true" ]]; then
+                submit="disabled"
+              elif [[ "${build}" != "success" ]]; then
+                submit="not run"
+              else
+                submit="${submit:-${job}}"
+              fi
+            fi
+            if [[ "${build}" == "not requested" ]]; then
+              status="Not requested"
+            elif [[ "${build}" != "success" ]]; then
+              status="Build $(past "${build}")"
+            elif [[ "${submit}" == "disabled" ]]; then
+              status="Build succeeded, submit disabled"
+            elif [[ "${submit}" == "success" ]]; then
+              status="Build and submit succeeded"
+            else
+              status="Build succeeded, submit $(past "${submit}")"
+            fi
+            echo "| ${label} | ${status} | ${build} | ${submit} | \`${5:-n/a}\` | \`${6:-n/a}\` | ${7:-n/a} |"
+          }
           {
             echo "## Expo publish"
             echo
             echo "- Version: \`${VERSION}\`"
             echo "- Profile: \`${PROFILE}\`"
             echo "- Submit: \`${SUBMIT}\`"
-            echo "- Android (${ANDROID_RESULT}): \`${ANDROID_ARTIFACT:-n/a}\`"
-            echo "- iOS (${IOS_RESULT}): \`${IOS_ARTIFACT:-n/a}\`"
+            echo
+            echo "| Platform | Status | Build | Submit | Artifact | Path | Build number |"
+            echo "| --- | --- | --- | --- | --- | --- | --- |"
+            row Android "${ANDROID_RESULT}" "${ANDROID_BUILD}" "${ANDROID_SUBMIT}" \
+              "${ANDROID_ARTIFACT_NAME}" "${ANDROID_ARTIFACT}" "${ANDROID_BUILD_NUMBER}"
+            row iOS "${IOS_RESULT}" "${IOS_BUILD}" "${IOS_SUBMIT}" \
+              "${IOS_ARTIFACT_NAME}" "${IOS_ARTIFACT}" "${IOS_BUILD_NUMBER}"
           } >> "$GITHUB_STEP_SUMMARY"
