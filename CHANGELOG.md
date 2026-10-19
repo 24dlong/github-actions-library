@@ -1,3 +1,35 @@
+## 7.1.1 (2026-10-19)
+
+
+- fix: key the Expo CocoaPods cache on the lockfile (#108)
+- * fix: free Android disk and make Expo build caches hit
+- The Android Expo build ran out of disk in the release CMake step. Free
+disk before setup by removing .NET, GHC, CodeQL, unused NDKs (keeping
+27.1.12297006), the emulator, system images and Docker images, and log
+df -h before and after.
+- Pin the pnpm store to one path so setup-node's pnpm cache restores the
+same directory whatever layout action-setup leaves at PNPM_HOME.
+- Key the CocoaPods cache on pnpm-lock.yaml (and ios/Podfile.lock when
+present) with a restore prefix, so it refreshes instead of being saved
+once under a fixed key.
+- Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_012GceBjDdE8LDfZjXxKV5mf
+- * fix: drop Android disk cleanup step from Expo build
+- Remove the "Free disk space" step and its README text. Android disk
+exhaustion is handled in the spoke instead (no Playwright in install,
+arm-only ABIs). Keep the CocoaPods cache key and pnpm store pin.
+- Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_012GceBjDdE8LDfZjXxKV5mf
+- * fix: drop pnpm store pin from setup-no-install
+- action-setup bootstraps with pnpm 11 and then switches to the repo's
+packageManager, so repos should bump pnpm to match instead. The earlier
+cache miss is also explained by setup-node only saving its cache on
+successful jobs.
+- Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_012GceBjDdE8LDfZjXxKV5mf
+- ---------
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
 ## 7.1.0 (2026-10-17)
 
 
