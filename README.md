@@ -354,10 +354,8 @@ Keep `make install` to dependency installation. The build job runs it, so anythi
 there (Playwright browsers and their system packages, linters) costs build time and disk
 on every store build. Install those from the target that needs them (`test`, `lint`).
 
-The Android job frees disk before setup: it removes .NET, GHC, CodeQL, Android NDKs other
-than `27.1.12297006`, the emulator and system images, and unused Docker images, and logs
-`df -h` before and after. The iOS job caches CocoaPods keyed on `pnpm-lock.yaml` (and an
-`ios/Podfile.lock`, if the app commits one).
+The iOS job caches CocoaPods keyed on `pnpm-lock.yaml` (and an `ios/Podfile.lock`, if the
+app commits one).
 
 Build jobs use the `environment` input (default `production`). The caller passes
 `expo-token` and `sentry-auth-token` from `EXPO_TOKEN` and `SENTRY_AUTH_TOKEN`. The

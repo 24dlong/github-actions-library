@@ -75,39 +75,6 @@ runs:
         fi
       shell: bash
 
-    # The hosted Ubuntu image leaves ~15 GB free; a release build of the RN
-    # native libraries (CMake, several ABIs) needs more. Drop toolchains this
-    # job never uses. Gradle reinstalls a missing NDK, so a stale keep is only
-    # slower, never broken.
-    - name: Free disk space
-      if: inputs.platform == 'android'
-      env:
-        KEEP_NDK: 27.1.12297006
-      run: |
-        set -euo pipefail
-        echo "::group::Disk before"
-        df -h /
-        echo "::endgroup::"
-        sudo rm -rf \
-          /usr/share/dotnet \
-          /opt/ghc \
-          /usr/local/.ghcup \
-          /opt/hostedtoolcache/CodeQL
-        sdk="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-        if [[ -d "${sdk}/ndk" ]]; then
-          for ndk in "${sdk}"/ndk/*; do
-            if [[ "$(basename -- "${ndk}")" != "${KEEP_NDK}" ]]; then
-              sudo rm -rf "${ndk}"
-            fi
-          done
-        fi
-        sudo rm -rf "${sdk}/ndk-bundle" "${sdk}/emulator" "${sdk}/system-images"
-        docker image prune -af > /dev/null
-        echo "::group::Disk after"
-        df -h /
-        echo "::endgroup::"
-      shell: bash
-
     - name: Select Xcode
       if: inputs.platform == 'ios'
       run: |
