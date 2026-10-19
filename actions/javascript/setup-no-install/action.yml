@@ -38,6 +38,19 @@ runs:
     - name: Setup pnpm
       uses: pnpm/action-setup@v6
 
+    # action-setup bootstraps with pnpm 11 and switches to packageManager; the
+    # store then defaults to a path inside PNPM_HOME that moves with the
+    # installer's layout. Pin it so setup-node caches and restores one path.
+    # pnpm 10 reads npm_config_*, pnpm 11 reads pnpm_config_*.
+    - name: Pin pnpm store
+      run: |
+        store="${RUNNER_TEMP}/pnpm-store"
+        {
+          echo "npm_config_store_dir=${store}"
+          echo "pnpm_config_store_dir=${store}"
+        } >> "$GITHUB_ENV"
+      shell: bash
+
     - name: Setup Node
       uses: actions/setup-node@v7
       with:
