@@ -1,3 +1,9 @@
+## 7.1.2 (2026-10-20)
+
+
+- chore(deps): update dependency ubuntu to v26 (#110)
+- Co-authored-by: 24dlong-renovate[bot] <286791535+24dlong-renovate[bot]@users.noreply.github.com>
+
 ## 7.1.1 (2026-10-19)
 
 
