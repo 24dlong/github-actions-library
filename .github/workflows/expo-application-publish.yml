@@ -67,7 +67,7 @@ concurrency:
 jobs:
   detect:
     name: Detect
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -82,7 +82,7 @@ jobs:
     name: Android
     needs: detect
     if: needs.detect.outputs.build == 'true' && contains(inputs.platforms, 'android')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     environment: ${{ inputs.environment }}
     permissions:
@@ -160,7 +160,7 @@ jobs:
     name: Summary
     needs: [detect, android, ios]
     if: always() && !cancelled() && needs.detect.outputs.build == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
