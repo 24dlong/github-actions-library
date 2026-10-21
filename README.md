@@ -355,7 +355,16 @@ there (Playwright browsers and their system packages, linters) costs build time 
 on every store build. Install those from the target that needs them (`test`, `lint`).
 
 The iOS job caches CocoaPods keyed on `pnpm-lock.yaml` (and an `ios/Podfile.lock`, if the
-app commits one).
+app commits one), and the React Native core, dependencies and Hermes tarballs in
+`~/Library/Caches/ReactNative` keyed on `pnpm-lock.yaml`. Both are saved right after a
+successful package step, on a key miss only, so a job that fails later (for example at
+submit) still warms the next run.
+
+`Mobile / Summary` reports each platform's build and submit separately (for example
+"Build succeeded, submit failed"), with the uploaded artifact name (`mobile-<platform>-<version>`),
+its path and the build number eas auto-incremented to, when it logged one. A failed submit
+can be retried from that artifact without rebuilding:
+`make -C <app dir> submit PLATFORM=<ios|android> ARTIFACT=<path>`.
 
 Build jobs use the `environment` input (default `production`). The caller passes
 `expo-token` and `sentry-auth-token` from `EXPO_TOKEN` and `SENTRY_AUTH_TOKEN`. The
