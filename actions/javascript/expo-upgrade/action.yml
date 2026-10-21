@@ -49,7 +49,6 @@ runs:
         token: ${{ steps.app-token.outputs.token }}
 
     - name: Setup JavaScript Environment
-      id: setup
       uses: 24dlong/github-actions-library/actions/javascript/setup-no-install@v7
       with:
         codeartifact-aws-account-id: ${{ inputs.codeartifact-aws-account-id }}
@@ -69,20 +68,6 @@ runs:
         CI: false # pnpm enables frozen-lockfile when CI=true
       run: pnpm exec expo install --fix
       shell: bash
-
-    # See actions/javascript/setup: prune before the save, never fail on it.
-    - name: Prune pnpm store
-      if: steps.setup.outputs.pnpm-cache-hit != 'true'
-      continue-on-error: true
-      run: pnpm store prune
-      shell: bash
-
-    - name: Save pnpm store
-      if: steps.setup.outputs.pnpm-cache-hit != 'true'
-      uses: actions/cache/save@v6
-      with:
-        path: ${{ steps.setup.outputs.pnpm-store-path }}
-        key: ${{ steps.setup.outputs.pnpm-cache-key }}
 
     - name: Commit Expo Dependency Updates
       id: commit

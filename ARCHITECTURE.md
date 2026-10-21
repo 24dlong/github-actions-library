@@ -425,14 +425,8 @@ These are the facts behind decisions above. They save a re-investigation.
   when the job succeeds**. A job that fails late (a store submit after a 20-minute build)
   never saves, so every run starts cold. Where that matters, split into
   `actions/cache/restore` and an `actions/cache/save` step placed right after the step that
-  fills the cache, guarded by `cache-hit != 'true'` so a partial cache is never saved. The
-  JavaScript setup actions do this for the pnpm store; Expo Build does it for CocoaPods and
-  the React Native tarballs.
-- A `restore-keys` fallback restores an older lockfile's pnpm store, and saving it as is
-  carries every superseded package forward. `pnpm store prune` after install, before the
-  save, drops only packages no installed project references (checked on pnpm 10 and 11,
-  with clone and hardlink imports). It runs with `continue-on-error` so a failed prune
-  still saves.
+  fills the cache, guarded by `cache-hit != 'true'` so a partial cache is never saved. Expo
+  Build does this for CocoaPods and the React Native tarballs.
 - Squash-merge settings affect the changelog. Repositories that squash with commit
   messages need a single, well-formed commit per pull request.
 
