@@ -1,3 +1,39 @@
+## 7.1.3 (2026-10-21)
+
+
+- fix: save Expo native caches before submit and report build and submit separately (#109)
+- * fix: save Expo build caches before submit and split build and submit in the summary
+- setup-node's pnpm cache and actions/cache save in post steps that run only
+when the job succeeds, so an iOS job that failed at submit never saved and
+every run started cold. The pnpm store, CocoaPods and the React Native
+tarballs (~/Library/Caches/ReactNative) are now restored with
+actions/cache/restore and saved right after a successful install or package
+step, on a key miss only.
+- Mobile / Summary now reports build and submit separately per platform
+(for example "Build succeeded, submit failed") with the artifact name, path
+and build number.
+- Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_012GceBjDdE8LDfZjXxKV5mf
+- * fix: prune the pnpm store before saving it
+- When the restore misses the exact key, the store comes from a restore-keys
+fallback built for an older lockfile, and saving it as is carries every
+superseded package forward. Run `pnpm store prune` after install, right
+before the save, on the same key-miss path. Prune removes only packages no
+installed project references (checked on pnpm 10.12.4 and 11.28.6 with
+clone and hardlink imports: an offline reinstall still succeeds). It runs
+with continue-on-error so a failed prune never fails the job or skips the
+save.
+- Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_012GceBjDdE8LDfZjXxKV5mf
+- * revert: drop the pnpm store cache and prune changes
+- The pnpm store cache miss is left to the monorepo pnpm 11 bump. The
+JavaScript setup actions go back to setup-node's built-in pnpm cache,
+as on main. The Expo native cache split and the Summary changes stay.
+- Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_012GceBjDdE8LDfZjXxKV5mf
+- ---------
+- Co-authored-by: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+
 ## 7.1.2 (2026-10-20)
 
 
