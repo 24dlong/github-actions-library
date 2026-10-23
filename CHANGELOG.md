@@ -1,3 +1,13 @@
+## 7.2.0 (2026-10-23)
+
+
+- feat: detect native changes before Expo builds and support forced builds (#111)
+- Add actions/javascript/expo/detect, which compares v<version> with the
+previous v* tag over the caller's paths. expo-application-publish.yml
+gains paths and force inputs, and version is now optional (a forced run
+with nothing released builds the latest v* tag).
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
 ## 7.1.3 (2026-10-21)
 
 
