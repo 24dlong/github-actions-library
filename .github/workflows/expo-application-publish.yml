@@ -1,8 +1,9 @@
 # Reusable publish workflow for an Expo application (local EAS builds, then
 # store submit). Not run in this repository: on.workflow_call only.
 #
-# Jobs: Detect (always builds; change detection is the spoke's follow-up),
-# Android on ubuntu-24.04, iOS on macos-26 with Xcode 26.4.1, then Summary.
+# Jobs: Detect (builds only when `paths` changed between the release tag and
+# the previous v* tag, or when forced), Android on ubuntu-26.04, iOS on
+# macos-26 with Xcode 26.4.1, then Summary.
 # With a caller job named Mobile, the checks are Mobile / Detect, Mobile /
 # Android, Mobile / iOS and Mobile / Summary.
 #
@@ -25,13 +26,30 @@ on:
   workflow_call:
     inputs:
       version:
-        description: Released app version, exported to the build as APP_VERSION.
-        required: true
+        description: >-
+          Released app version, exported to the build as APP_VERSION. Empty
+          when nothing was released: with `force`, the latest v* tag's version
+          is built, otherwise nothing is built.
+        required: false
         type: string
+        default: ""
       working-directory:
         description: Directory of the Expo project, relative to the repository root (e.g. "apps/mobile").
         required: true
         type: string
+      paths:
+        description: >-
+          Newline-separated git pathspecs that can change the native build
+          (for example "apps/mobile"). Detect builds only when one changed
+          between the previous v* tag and v<version>. Empty always builds.
+        required: false
+        type: string
+        default: ""
+      force:
+        description: Build regardless of changed paths.
+        required: false
+        type: boolean
+        default: false
       platforms:
         description: Comma-separated platforms to build (ios, android, or both).
         required: false
@@ -73,10 +91,14 @@ jobs:
       contents: read
     outputs:
       build: ${{ steps.decide.outputs.build }}
+      version: ${{ steps.decide.outputs.version }}
     steps:
       - id: decide
-        # Task 5 replaces this with a comparison against the previous release tag.
-        run: echo "build=true" >> "$GITHUB_OUTPUT"
+        uses: 24dlong/github-actions-library/actions/javascript/expo/detect@v7
+        with:
+          version: ${{ inputs.version }}
+          paths: ${{ inputs.paths }}
+          force: ${{ inputs.force }}
 
   android:
     name: Android
@@ -104,7 +126,7 @@ jobs:
           working-directory: ${{ inputs.working-directory }}
           platform: android
           profile: ${{ inputs.build-profile }}
-          version: ${{ inputs.version }}
+          version: ${{ needs.detect.outputs.version }}
           expo-token: ${{ secrets.expo-token }}
           sentry-auth-token: ${{ secrets.sentry-auth-token }}
           codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
@@ -150,7 +172,7 @@ jobs:
           working-directory: ${{ inputs.working-directory }}
           platform: ios
           profile: ${{ inputs.build-profile }}
-          version: ${{ inputs.version }}
+          version: ${{ needs.detect.outputs.version }}
           expo-token: ${{ secrets.expo-token }}
           sentry-auth-token: ${{ secrets.sentry-auth-token }}
           codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
@@ -181,7 +203,7 @@ jobs:
     steps:
       - name: Write summary
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.detect.outputs.version }}
           PROFILE: ${{ inputs.build-profile }}
           SUBMIT: ${{ inputs.submit }}
           ANDROID_RESULT: ${{ needs.android.result }}

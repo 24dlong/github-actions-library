@@ -336,7 +336,7 @@ The CodeArtifact role and the ECR push role must both trust the
 `expo-application-publish.yml` builds an Expo app on the runner (`eas build --local` via
 the spoke's `make package`) and optionally submits it (`make submit`). It is separate
 from JavaScript Application Publish: different runners, secrets and job graph. iOS runs
-on `macos-26` with Xcode 26.4.1 selected. Android runs on `ubuntu-24.04` with Temurin 17.
+on `macos-26` with Xcode 26.4.1 selected. Android runs on `ubuntu-26.04` with Temurin 17.
 Android `timeout-minutes` is 45; iOS is 60.
 
 The spoke's app Makefile must provide:
@@ -370,20 +370,31 @@ Build jobs use the `environment` input (default `production`). The caller passes
 `expo-token` and `sentry-auth-token` from `EXPO_TOKEN` and `SENTRY_AUTH_TOKEN`. The
 caller job must grant `id-token: write`, `contents: read` and `actions: write`. Name the
 caller job `Mobile` so the checks are `Mobile / Detect`, `Mobile / Android`, `Mobile / iOS`
-and `Mobile / Summary`. `Detect` currently always builds.
+and `Mobile / Summary`.
+
+`Detect` (the `actions/javascript/expo/detect` action) decides whether to build. It compares
+the release tag `v<version>` with the previous `v*` tag and builds only when a path in the
+`paths` input (newline-separated pathspecs, for example `apps/mobile`) changed between them.
+An empty `paths` always builds, as does `force: true`, a missing tag, or a first release.
+`version` may be empty (nothing released): with `force`, the latest `v*` tag's version is
+built; otherwise nothing is built. Detect writes the decision and the changed files to the
+job summary. Each release is judged only against the one before it, so a later release will
+not retry a mobile build that failed; re-run with `force`.
 
 ```yaml
-# .github/workflows/mobile-publish.yml
+# .github/workflows/merge.yml (after the job that runs JavaScript Application Publish)
 on:
   workflow_dispatch:
     inputs:
-      version:
-        required: true
-        type: string
+      force-mobile:
+        type: boolean
+        default: false
 
 jobs:
   mobile:
     name: Mobile
+    needs: publish # empty `version` output when nothing was released
+    if: ${{ !cancelled() && (needs.publish.outputs.version != '' || inputs.force-mobile) }}
     permissions:
       id-token: write
       contents: read
@@ -391,7 +402,13 @@ jobs:
     uses: 24dlong/github-actions-library/.github/workflows/expo-application-publish.yml@v7
     with:
       working-directory: apps/mobile
-      version: ${{ inputs.version }}
+      version: ${{ needs.publish.outputs.version }}
+      force: ${{ inputs.force-mobile == true }}
+      paths: |
+        apps/mobile
+        packages
+        pnpm-lock.yaml
+        pnpm-workspace.yaml
       # platforms, build-profile, submit and environment are optional
     secrets:
       expo-token: ${{ secrets.EXPO_TOKEN }}
