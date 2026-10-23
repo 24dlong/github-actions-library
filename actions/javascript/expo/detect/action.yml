@@ -1,0 +1,129 @@
+name: Expo Detect
+description: >-
+  Decides whether a release needs native Expo builds. Compares the release tag
+  (v<version>) with the previous v* tag and builds only when a path in `paths`
+  changed between them. Checks out the repository itself (full history), so run
+  it as its own job. Also resolves the version to build when a forced run has
+  nothing newly released.
+
+inputs:
+  version:
+    description: Released version without the leading v. Empty when nothing was released.
+    required: false
+    default: ""
+  paths:
+    description: >-
+      Newline-separated git pathspecs that can change the native build (for
+      example "apps/mobile"). Empty means always build.
+    required: false
+    default: ""
+  force:
+    description: >-
+      Build regardless of changes. With an empty `version`, builds the latest
+      v* tag's version.
+    required: false
+    default: "false"
+
+outputs:
+  build:
+    description: "'true' if native builds should run, otherwise 'false'."
+    value: ${{ steps.decide.outputs.build }}
+  version:
+    description: Version to build. Empty when nothing was released and `force` is false.
+    value: ${{ steps.decide.outputs.version }}
+  reason:
+    description: One-line explanation of the decision.
+    value: ${{ steps.decide.outputs.reason }}
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout Code
+      uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+
+    - name: Decide
+      id: decide
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_PATHS: ${{ inputs.paths }}
+        INPUT_FORCE: ${{ inputs.force }}
+      run: |
+        set -euo pipefail
+
+        build=false
+        reason=""
+        previous=""
+        changed=""
+        version="${INPUT_VERSION#v}"
+
+        if [[ -z "${version}" ]]; then
+          if [[ "${INPUT_FORCE}" == "true" ]]; then
+            tag="$(git tag --list 'v*' --sort=-v:refname | sed -n 1p)"
+            if [[ -z "${tag}" ]]; then
+              echo "No version given and no v* tag to build" >&2
+              exit 1
+            fi
+            version="${tag#v}"
+          else
+            reason="Nothing was released"
+          fi
+        fi
+
+        if [[ -n "${version}" ]]; then
+          paths=()
+          while IFS= read -r line; do
+            if [[ -n "${line//[[:space:]]/}" ]]; then
+              paths+=("${line}")
+            fi
+          done <<< "${INPUT_PATHS}"
+
+          if [[ "${INPUT_FORCE}" == "true" ]]; then
+            build=true
+            reason="Forced"
+          elif (( ${#paths[@]} == 0 )); then
+            build=true
+            reason="No paths to compare, always build"
+          elif ! git rev-parse --verify --quiet "refs/tags/v${version}" > /dev/null; then
+            build=true
+            reason="Tag v${version} not found, cannot compare"
+          else
+            previous="$(git describe --tags --abbrev=0 --match 'v*' "v${version}^" 2> /dev/null || true)"
+            if [[ -z "${previous}" ]]; then
+              build=true
+              reason="No previous v* tag, first release"
+            else
+              changed="$(git diff --name-only "${previous}" "v${version}" -- "${paths[@]}")"
+              if [[ -n "${changed}" ]]; then
+                build=true
+                reason="Native paths changed since ${previous}"
+              else
+                reason="No native paths changed since ${previous}"
+              fi
+            fi
+          fi
+        fi
+
+        {
+          echo "build=${build}"
+          echo "version=${version}"
+          echo "reason=${reason}"
+        } >> "${GITHUB_OUTPUT}"
+
+        {
+          echo "## Expo detect"
+          echo
+          echo "- Version: \`${version:-none}\`"
+          echo "- Build: \`${build}\`"
+          echo "- Reason: ${reason}"
+          if [[ -n "${changed}" ]]; then
+            echo
+            echo "Changed files (first 20):"
+            echo
+            echo '```'
+            echo "${changed}" | sed -n 1,20p
+            echo '```'
+          fi
+        } >> "${GITHUB_STEP_SUMMARY}"
+      shell: bash
