@@ -1,11 +1,14 @@
 # Reusable publish workflow for an Expo application (local EAS builds, then
 # store submit). Not run in this repository: on.workflow_call only.
 #
-# Jobs: Detect (builds only when `paths` changed between the release tag and
-# the previous v* tag, or when forced), Android on ubuntu-26.04, iOS on
-# macos-26 with Xcode 26.4.1, then Summary.
+# Jobs: Detect (builds only when `paths` changed since the last release whose
+# mobile builds were attached, or when forced), Notes (store-facing release
+# notes), Android on ubuntu-26.04, iOS on macos-26 with Xcode 26.4.1, then
+# Release (attaches the builds and notes to the GitHub release), Metadata
+# (optional App Store listing push) and Summary.
 # With a caller job named Mobile, the checks are Mobile / Detect, Mobile /
-# Android, Mobile / iOS and Mobile / Summary.
+# Notes, Mobile / Android, Mobile / iOS, Mobile / Release, Mobile / Metadata
+# and Mobile / Summary.
 #
 # Reads these caller repository (or GitHub Environment) variables, all
 # CodeArtifact: AWS_CODE_ARTIFACT_ACCOUNT_ID, AWS_REGION, AWS_ROLE_TO_ASSUME,
@@ -17,8 +20,9 @@
 # EXPO_TOKEN and SENTRY_AUTH_TOKEN, including when those exist only on the
 # environment.
 #
-# The caller job must grant `id-token: write`, `contents: read` and
-# `actions: write` (artifact upload and caches).
+# The caller job must grant `id-token: write`, `contents: write` (Release
+# attaches builds to the GitHub release) and `actions: write` (artifact upload
+# and caches).
 
 name: Expo Application Publish
 
@@ -65,8 +69,22 @@ on:
         required: false
         type: boolean
         default: true
+      release-assets:
+        description: >-
+          Attach the builds and release notes to the GitHub release v<version>.
+          Detect uses these assets to tell which release was last built.
+        required: false
+        type: boolean
+        default: true
+      metadata:
+        description: >-
+          Push the App Store listing with the spoke's `make metadata` after a
+          successful iOS build. The result is reported but never fails the run.
+        required: false
+        type: boolean
+        default: false
       environment:
-        description: GitHub Environment for the build jobs.
+        description: GitHub Environment for the build, metadata and submit jobs.
         required: false
         type: string
         default: production
@@ -99,6 +117,52 @@ jobs:
           version: ${{ inputs.version }}
           paths: ${{ inputs.paths }}
           force: ${{ inputs.force }}
+          platforms: ${{ inputs.platforms }}
+
+  notes:
+    name: Notes
+    needs: detect
+    if: needs.detect.outputs.build == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    # Notes are a convenience: a failure here never blocks builds or submit.
+    continue-on-error: true
+    outputs:
+      artifact-name: ${{ steps.notes.outputs.artifact-name }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Make release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.detect.outputs.version }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          # The spoke decides what store-facing notes mean; it may not have the target.
+          if ! make -C "${WORKING_DIRECTORY}" --dry-run release-notes > /dev/null 2>&1; then
+            echo "::notice::No release-notes target in ${WORKING_DIRECTORY}/Makefile, skipping"
+            exit 0
+          fi
+          mkdir -p "${RUNNER_TEMP}/notes"
+          gh release view "v${VERSION}" --json body --jq .body > "${RUNNER_TEMP}/notes/release-body.md"
+          make -C "${WORKING_DIRECTORY}" release-notes \
+            RELEASE_BODY_FILE="${RUNNER_TEMP}/notes/release-body.md" \
+            RELEASE_NOTES_FILE="${RUNNER_TEMP}/notes/release-notes.md"
+          echo "present=true" >> "${GITHUB_OUTPUT}"
+          echo "artifact-name=mobile-release-notes-${VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload release notes
+        if: steps.notes.outputs.present == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: mobile-release-notes-${{ needs.detect.outputs.version }}
+          path: ${{ runner.temp }}/notes/release-notes.md
+          if-no-files-found: error
 
   android:
     name: Android
@@ -192,17 +256,150 @@ jobs:
           artifact: ${{ steps.build.outputs.artifact-path }}
           expo-token: ${{ secrets.expo-token }}
 
+  release:
+    name: Release
+    needs: [detect, notes, android, ios]
+    if: >-
+      always() && !cancelled() && inputs.release-assets
+      && needs.detect.outputs.build == 'true'
+      && (needs.android.outputs.build-result == 'success' || needs.ios.outputs.build-result == 'success')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: write # upload assets to the release semantic-release created
+      actions: read # download the build artifacts
+    outputs:
+      url: ${{ steps.upload.outputs.url }}
+    steps:
+      - name: Download Android build
+        if: needs.android.outputs.build-result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.android.outputs.artifact-name }}
+          path: ${{ runner.temp }}/assets/android
+
+      - name: Download iOS build
+        if: needs.ios.outputs.build-result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.ios.outputs.artifact-name }}
+          path: ${{ runner.temp }}/assets/ios
+
+      - name: Download release notes
+        if: needs.notes.outputs.artifact-name != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.notes.outputs.artifact-name }}
+          path: ${{ runner.temp }}/assets/notes
+
+      - name: Attach to release
+        id: upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.detect.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Detect keys on the mobile-<platform>- prefix, so keep it. Name the
+          # file like its workflow artifact: mobile-<platform>-<version>.<ext>.
+          files=()
+          for platform in android ios; do
+            dir="${RUNNER_TEMP}/assets/${platform}"
+            [[ -d "${dir}" ]] || continue
+            for file in "${dir}"/*; do
+              target="${RUNNER_TEMP}/assets/mobile-${platform}-${VERSION}.${file##*/app.}"
+              mv "${file}" "${target}"
+              files+=("${target}")
+            done
+          done
+          notes="${RUNNER_TEMP}/assets/notes/release-notes.md"
+          if [[ -f "${notes}" ]]; then
+            mv "${notes}" "${RUNNER_TEMP}/assets/mobile-release-notes-${VERSION}.md"
+            files+=("${RUNNER_TEMP}/assets/mobile-release-notes-${VERSION}.md")
+          fi
+          # Re-runs and forced builds replace the previous build of this version.
+          gh release upload "v${VERSION}" "${files[@]}" --clobber
+          echo "url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}" >> "${GITHUB_OUTPUT}"
+
+  metadata:
+    name: Metadata
+    needs: [detect, notes, ios]
+    if: >-
+      always() && !cancelled() && inputs.metadata
+      && needs.ios.outputs.build-result == 'success'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+      actions: read
+    # App Store listing text is secondary to shipping the build, so a failed
+    # push is reported in Summary but does not fail the run.
+    continue-on-error: true
+    outputs:
+      # Reported apart because a continue-on-error job's own result is not a
+      # reliable signal for the push.
+      result: ${{ steps.push.outcome }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Setup JavaScript
+        uses: 24dlong/github-actions-library/actions/javascript/setup@v7
+        with:
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
+
+      - name: Download release notes
+        if: needs.notes.outputs.artifact-name != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.notes.outputs.artifact-name }}
+          path: ${{ runner.temp }}/notes
+
+      - name: Push store metadata
+        id: push
+        env:
+          APP_VERSION: ${{ needs.detect.outputs.version }}
+          EXPO_TOKEN: ${{ secrets.expo-token }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          make -C "${WORKING_DIRECTORY}" metadata \
+            RELEASE_NOTES_FILE="${RUNNER_TEMP}/notes/release-notes.md"
+
   summary:
     name: Summary
-    needs: [detect, android, ios]
+    needs: [detect, notes, android, ios, release, metadata]
     if: always() && !cancelled() && needs.detect.outputs.build == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
+      actions: read # download the release notes
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Download release notes
+        if: needs.notes.outputs.artifact-name != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.notes.outputs.artifact-name }}
+          path: ${{ runner.temp }}/notes
+
       - name: Write summary
         env:
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          RELEASE_URL: ${{ needs.release.outputs.url }}
+          RELEASE_RESULT: ${{ needs.release.result }}
+          METADATA_REQUESTED: ${{ inputs.metadata }}
+          METADATA_RESULT: ${{ needs.metadata.result }}
+          METADATA_PUSH: ${{ needs.metadata.outputs.result }}
           VERSION: ${{ needs.detect.outputs.version }}
           PROFILE: ${{ inputs.build-profile }}
           SUBMIT: ${{ inputs.submit }}
@@ -271,4 +468,36 @@ jobs:
               "${ANDROID_ARTIFACT_NAME}" "${ANDROID_ARTIFACT}" "${ANDROID_BUILD_NUMBER}"
             row iOS "${IOS_RESULT}" "${IOS_BUILD}" "${IOS_SUBMIT}" \
               "${IOS_ARTIFACT_NAME}" "${IOS_ARTIFACT}" "${IOS_BUILD_NUMBER}"
+            echo
+            case "${RELEASE_RESULT}" in
+              success) echo "- Release assets: [v${VERSION}](${RELEASE_URL})" ;;
+              skipped) echo "- Release assets: not attached" ;;
+              *) echo "- Release assets: attach $(past "${RELEASE_RESULT}")" ;;
+            esac
+            if [[ "${METADATA_REQUESTED}" == "true" ]]; then
+              if [[ "${METADATA_RESULT}" == "skipped" ]]; then
+                echo "- App Store metadata: skipped (no successful iOS build)"
+              elif [[ "${METADATA_PUSH}" == "success" ]]; then
+                echo "- App Store metadata: pushed"
+              else
+                echo "- App Store metadata: push failed, see the Metadata job"
+              fi
+            fi
+            notes="${RUNNER_TEMP}/notes/release-notes.md"
+            if [[ -f "${notes}" ]]; then
+              echo
+              echo "<details><summary>Draft release notes (copy into TestFlight and Play)</summary>"
+              echo
+              cat "${notes}"
+              echo
+              echo "</details>"
+            fi
+            echo
+            # The spoke's handoff target prints the manual-submission checklist.
+            if make -C "${WORKING_DIRECTORY}" --dry-run handoff > /dev/null 2>&1; then
+              VERSION="${VERSION}" IOS_BUILD="${IOS_BUILD_NUMBER}" ANDROID_BUILD="${ANDROID_BUILD_NUMBER}" \
+                make --no-print-directory --quiet -C "${WORKING_DIRECTORY}" handoff
+            else
+              echo "No handoff target in ${WORKING_DIRECTORY}/Makefile. Submit the builds to review in App Store Connect and Play Console by hand."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

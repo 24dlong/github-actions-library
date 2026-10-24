@@ -134,6 +134,7 @@ lets one generic workflow serve many technologies.
 | `publish` | `actions/javascript/publish` | Create the release. Receives `GITHUB_TOKEN`; the generic `publish.yml` uses commitizen instead and needs no target |
 | `package` | `actions/javascript/expo/build` | Produce the deployable artifact. Required only for `expo-application-publish.yml`. Receives `PLATFORM` (`ios` or `android`), `PROFILE`, optional `OUTPUT` (exact path), and optional `OUTPUT_DIR` (directory; the Makefile chooses the filename from the build profile and writes `<dir>/.artifact-path`) |
 | `submit` | `actions/javascript/expo/submit` | Submit a built artifact. Required only for `expo-application-publish.yml`. Receives `PLATFORM` and `ARTIFACT` (path relative to the app directory) |
+| `release-notes`, `metadata`, `handoff` | `expo-application-publish.yml` (inline steps) | Optional store handoff targets for Expo apps; the workflow skips or degrades without them. `release-notes` turns the GitHub release body (`RELEASE_BODY_FILE`) into store notes (`RELEASE_NOTES_FILE`); `metadata` pushes the store listing; `handoff` prints a markdown checklist for the job summary |
 | `plan`, `apply` | Terraform actions | Plan and apply an environment (`ENV`, `INFRA_DIR`, `PLAN_FILE`, `TF_FLAGS`) |
 
 Why `make`:
