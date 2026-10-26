@@ -1,3 +1,16 @@
+## 7.3.0 (2026-10-26)
+
+
+- feat: attach Expo builds to the release and add store handoff steps (#112)
+- Adds release, notes and metadata jobs to expo-application-publish.yml and
+extends the summary with release links, draft notes and the spoke's handoff
+checklist. Detect now compares against the last release that has mobile
+build assets, so a failed or dropped mobile build is retried by the next
+release.
+- New inputs release-assets (default true) and metadata (default false).
+Callers must grant contents: write to the mobile job before moving @v7.
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
 ## 7.2.0 (2026-10-23)
 
 
