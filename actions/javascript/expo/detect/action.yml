@@ -1,8 +1,11 @@
 name: Expo Detect
 description: >-
   Decides whether a release needs native Expo builds. Compares the release tag
-  (v<version>) with the previous v* tag and builds only when a path in `paths`
-  changed between them. Checks out the repository itself (full history), so run
+  (v<version>) with the last release that has mobile build assets attached
+  (falling back to the previous v* tag) and builds only when a path in `paths`
+  changed between them. A release that never got its builds, because they
+  failed or were dropped, is therefore compared again by the next release.
+  Checks out the repository itself (full history), so run
   it as its own job. Also resolves the version to build when a forced run has
   nothing newly released.
 
@@ -23,6 +26,16 @@ inputs:
       v* tag's version.
     required: false
     default: "false"
+  platforms:
+    description: >-
+      Comma-separated platforms the caller builds. A release counts as built
+      only when it has an asset named mobile-<platform>-* for every one.
+    required: false
+    default: ios,android
+  github-token:
+    description: Token that can read releases. Needs contents read.
+    required: false
+    default: ${{ github.token }}
 
 outputs:
   build:
@@ -49,12 +62,15 @@ runs:
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_PATHS: ${{ inputs.paths }}
         INPUT_FORCE: ${{ inputs.force }}
+        INPUT_PLATFORMS: ${{ inputs.platforms }}
+        GH_TOKEN: ${{ inputs.github-token }}
       run: |
         set -euo pipefail
 
         build=false
         reason=""
         previous=""
+        source=""
         changed=""
         version="${INPUT_VERSION#v}"
 
@@ -89,7 +105,35 @@ runs:
             build=true
             reason="Tag v${version} not found, cannot compare"
           else
-            previous="$(git describe --tags --abbrev=0 --match 'v*' "v${version}^" 2> /dev/null || true)"
+            # Prefer the newest older release whose assets show the mobile
+            # build finished. The release job attaches mobile-<platform>-*
+            # files; a failed or skipped build leaves none.
+            platforms="$(jq -Rc 'split(",") | map(gsub("\\s"; "")) | map(select(length > 0))' <<< "${INPUT_PLATFORMS}")"
+            built=""
+            while IFS= read -r tag; do
+              if [[ -n "${tag}" && "${tag}" != "v${version}" ]] \
+                && git merge-base --is-ancestor "refs/tags/${tag}" "refs/tags/v${version}" 2> /dev/null; then
+                built="${tag}"
+                break
+              fi
+            done < <(
+              gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" 2> /dev/null \
+                | jq -r --argjson platforms "${platforms}" '
+                    .[]
+                    | select(.draft | not)
+                    | select(.tag_name | startswith("v"))
+                    | select(.assets as $assets
+                        | $platforms | all(. as $p | $assets | any(.name | startswith("mobile-\($p)-"))))
+                    | .tag_name' \
+                || true
+            )
+            if [[ -n "${built}" ]]; then
+              previous="${built}"
+              source="last mobile build"
+            else
+              previous="$(git describe --tags --abbrev=0 --match 'v*' "v${version}^" 2> /dev/null || true)"
+              source="previous release"
+            fi
             if [[ -z "${previous}" ]]; then
               build=true
               reason="No previous v* tag, first release"
@@ -97,9 +141,9 @@ runs:
               changed="$(git diff --name-only "${previous}" "v${version}" -- "${paths[@]}")"
               if [[ -n "${changed}" ]]; then
                 build=true
-                reason="Native paths changed since ${previous}"
+                reason="Native paths changed since ${previous} (${source})"
               else
-                reason="No native paths changed since ${previous}"
+                reason="No native paths changed since ${previous} (${source})"
               fi
             fi
           fi

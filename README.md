@@ -346,6 +346,16 @@ The spoke's app Makefile must provide:
   from the build profile and writes `<dir>/.artifact-path`).
 - `submit`, with `PLATFORM` and `ARTIFACT` (path relative to the app directory).
 
+It may also provide these optional targets. The workflow skips or degrades without them:
+
+- `release-notes`, with `RELEASE_BODY_FILE` (the GitHub release body) and
+  `RELEASE_NOTES_FILE` (where to write store-facing notes). The app decides what is
+  user-facing.
+- `metadata` (only when the `metadata` input is on), with `RELEASE_NOTES_FILE`: push the
+  store listing. The job has `APP_VERSION` and `EXPO_TOKEN` set.
+- `handoff`, with `VERSION`, `IOS_BUILD` and `ANDROID_BUILD` (build numbers) in the
+  environment: print a markdown "to ship" checklist for the job summary.
+
 `make install` must leave CodeArtifact auth in `~/.npmrc`. A local EAS build copies the
 repo to a temp directory and runs its own `pnpm install` there, so a repo-local `.npmrc`
 is not enough.
@@ -364,22 +374,40 @@ submit) still warms the next run.
 "Build succeeded, submit failed"), with the uploaded artifact name (`mobile-<platform>-<version>`),
 its path and the build number eas auto-incremented to, when it logged one. A failed submit
 can be retried from that artifact without rebuilding:
-`make -C <app dir> submit PLATFORM=<ios|android> ARTIFACT=<path>`.
+`make -C <app dir> submit PLATFORM=<ios|android> ARTIFACT=<path>`. The summary also links
+the release assets, reports the metadata push, shows draft release notes, and ends with the
+app's `handoff` checklist.
+
+With `release-assets` (default true), `Mobile / Release` attaches each successful build to the
+GitHub release `v<version>` as `mobile-<platform>-<version>.<ext>`, plus
+`mobile-release-notes-<version>.md`, using `gh release upload --clobber`. These stay after the
+90-day workflow artifacts expire and give Detect its marker (below). `Mobile / Notes` builds
+the notes from the release body through the spoke's `release-notes` target and never blocks
+a build. With `metadata: true`, `Mobile / Metadata` runs `make metadata` after a successful
+iOS build (on Ubuntu, so it costs no macOS minutes). It is `continue-on-error`: a failed push
+is reported in the summary and does not fail the run.
 
 Build jobs use the `environment` input (default `production`). The caller passes
 `expo-token` and `sentry-auth-token` from `EXPO_TOKEN` and `SENTRY_AUTH_TOKEN`. The
-caller job must grant `id-token: write`, `contents: read` and `actions: write`. Name the
-caller job `Mobile` so the checks are `Mobile / Detect`, `Mobile / Android`, `Mobile / iOS`
+caller job must grant `id-token: write`, `contents: write` (release assets) and
+`actions: write`. A called workflow that asks for more permissions than its caller grants
+fails the whole run at startup, so grant `contents: write` before moving `@v7` to a version
+with release assets (7.3.0). Name the caller job `Mobile` so the checks are `Mobile / Detect`,
+`Mobile / Notes`, `Mobile / Android`, `Mobile / iOS`, `Mobile / Release`, `Mobile / Metadata`
 and `Mobile / Summary`.
 
 `Detect` (the `actions/javascript/expo/detect` action) decides whether to build. It compares
-the release tag `v<version>` with the previous `v*` tag and builds only when a path in the
+the release tag `v<version>` with the newest older release that has `mobile-<platform>-*`
+assets for every requested platform (the last mobile build), falling back to the previous
+`v*` tag when no release has them, and builds only when a path in the
 `paths` input (newline-separated pathspecs, for example `apps/mobile`) changed between them.
 An empty `paths` always builds, as does `force: true`, a missing tag, or a first release.
 `version` may be empty (nothing released): with `force`, the latest `v*` tag's version is
 built; otherwise nothing is built. Detect writes the decision and the changed files to the
-job summary. Each release is judged only against the one before it, so a later release will
-not retry a mobile build that failed; re-run with `force`.
+job summary. A release whose builds failed, or never ran, has no assets, so the next release
+is compared against the last release that did build and retries those changes. A failed
+submit does not undo that: retry it from the artifact. With `release-assets` off, Detect has
+no marker and compares with the previous tag only.
 
 ```yaml
 # .github/workflows/merge.yml (after the job that runs JavaScript Application Publish)
@@ -397,7 +425,7 @@ jobs:
     if: ${{ !cancelled() && (needs.publish.outputs.version != '' || inputs.force-mobile) }}
     permissions:
       id-token: write
-      contents: read
+      contents: write # release assets
       actions: write
     uses: 24dlong/github-actions-library/.github/workflows/expo-application-publish.yml@v7
     with:
@@ -409,7 +437,7 @@ jobs:
         packages
         pnpm-lock.yaml
         pnpm-workspace.yaml
-      # platforms, build-profile, submit and environment are optional
+      # platforms, build-profile, submit, release-assets, metadata and environment are optional
     secrets:
       expo-token: ${{ secrets.EXPO_TOKEN }}
       sentry-auth-token: ${{ secrets.SENTRY_AUTH_TOKEN }}
