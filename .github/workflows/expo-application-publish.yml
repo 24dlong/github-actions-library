@@ -216,12 +216,8 @@ jobs:
 
   ios:
     name: iOS
-    # Notes feed the TestFlight "What to Test" text. They are a convenience, so
-    # run even when that job failed (!cancelled), but only after Detect passed.
-    needs: [detect, notes]
-    if: >-
-      !cancelled() && needs.detect.result == 'success'
-      && needs.detect.outputs.build == 'true' && contains(inputs.platforms, 'ios')
+    needs: detect
+    if: needs.detect.outputs.build == 'true' && contains(inputs.platforms, 'ios')
     runs-on: macos-26
     timeout-minutes: 60
     environment: ${{ inputs.environment }}
@@ -256,13 +252,6 @@ jobs:
           codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
           codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
 
-      - name: Download release notes
-        if: inputs.submit && needs.notes.outputs.artifact-name != ''
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.notes.outputs.artifact-name }}
-          path: ${{ runner.temp }}/notes
-
       - name: Submit
         id: submit
         if: inputs.submit
@@ -272,7 +261,6 @@ jobs:
           platform: ios
           artifact: ${{ steps.build.outputs.artifact-path }}
           expo-token: ${{ secrets.expo-token }}
-          release-notes-file: ${{ needs.notes.outputs.artifact-name != '' && format('{0}/notes/release-notes.md', runner.temp) || '' }}
 
   release:
     name: Release
@@ -335,7 +323,8 @@ jobs:
             files+=("${RUNNER_TEMP}/assets/mobile-release-notes-${VERSION}.md")
           fi
           # Re-runs and forced builds replace the previous build of this version.
-          gh release upload "v${VERSION}" "${files[@]}" --clobber
+          # No checkout in this job, so gh cannot infer the repository from git.
+          gh release upload "v${VERSION}" "${files[@]}" --repo "${GITHUB_REPOSITORY}" --clobber
           echo "url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}" >> "${GITHUB_OUTPUT}"
 
   submissions:
@@ -362,8 +351,10 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v7
 
+      # eas loads the app config (and its plugins) even to read a submission,
+      # so the dependencies must be installed.
       - name: Setup JavaScript
-        uses: 24dlong/github-actions-library/actions/javascript/setup-no-install@v7
+        uses: 24dlong/github-actions-library/actions/javascript/setup@v7
         with:
           codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
           codeartifact-aws-region: ${{ vars.AWS_REGION }}
@@ -399,6 +390,7 @@ jobs:
           states=()
           for i in "${!ids[@]}"; do states+=(pending); done
           failed=0
+          tool_errors=0
           deadline=$(( SECONDS + 85 * 60 ))
           while :; do
             waiting=0
@@ -411,9 +403,21 @@ jobs:
               output="$(make -C "${WORKING_DIRECTORY}" --no-print-directory submit-status SUBMISSION_ID="${ids[$i]}" 2>&1)" || code=$?
               echo "${labels[$i]} (${urls[$i]}): ${output##*$'\n'} [exit ${code}]"
               case "${code}" in
-                0) states[$i]=FINISHED ;;
-                1) states[$i]=FAILED; failed=1 ;;
-                *) waiting=1 ;;
+                0) states[$i]=FINISHED; tool_errors=0 ;;
+                1) states[$i]=FAILED; failed=1; tool_errors=0 ;;
+                3) waiting=1; tool_errors=0 ;;
+                *)
+                  # Not a store answer: show everything eas said, and give up
+                  # after a few in a row instead of retrying until the deadline.
+                  echo "${output}" >&2
+                  tool_errors=$(( tool_errors + 1 ))
+                  if (( tool_errors >= 5 )); then
+                    echo "::error::submit-status failed ${tool_errors} times in a row (exit ${code}); see the output above"
+                    echo "${labels[$i]}-status=ERROR" >> "${GITHUB_OUTPUT}"
+                    exit 1
+                  fi
+                  waiting=1
+                  ;;
               esac
               echo "${labels[$i]}-status=${states[$i]}" >> "${GITHUB_OUTPUT}"
             done
@@ -587,6 +591,7 @@ jobs:
                 FINISHED) delivery=delivered ;;
                 FAILED) delivery=rejected ;;
                 TIMEOUT) delivery="timed out" ;;
+                ERROR) delivery="status check failed" ;;
                 *) delivery=queued ;;
               esac
               submit="${delivery}"
