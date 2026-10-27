@@ -353,9 +353,11 @@ It may also provide these optional targets. The workflow skips or degrades witho
 - `release-notes`, with `RELEASE_BODY_FILE` (the GitHub release body) and
   `RELEASE_NOTES_FILE` (where to write store-facing notes). The app decides what is
   user-facing.
-- `submit-status`, with `SUBMISSION_ID`: print the store status and exit 0 when the submission
-  finished, 1 when it errored or was canceled, 3 while it is still running. The `Submissions`
-  job polls it. Without it, submissions stay queued and nothing waits on them.
+- `submit-status`, with `SUBMISSION_ID`: print one line `status=<STATUS>` using EAS's
+  submission statuses (`FINISHED`, `ERRORED`, `CANCELED`, `IN_PROGRESS`, `IN_QUEUE`,
+  `AWAITING_BUILD`). The `Submissions` job reads that line, not the exit code, because make
+  turns any failed recipe into exit 2. Print nothing starting with `status=` when the
+  status could not be read; five such polls in a row fail the job. The job polls it. Without it, submissions stay queued and nothing waits on them.
 - `metadata` (only when the `metadata` input is on), with `RELEASE_NOTES_FILE`: push the
   store listing. The job has `APP_VERSION` and `EXPO_TOKEN` set. An optional `metadata-lint`
   target runs first so an invalid store config fails before it reaches the store.

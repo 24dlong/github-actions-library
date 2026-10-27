@@ -396,23 +396,23 @@ jobs:
             waiting=0
             for i in "${!ids[@]}"; do
               [[ "${states[$i]}" == pending ]] || continue
-              # submit-status exits 0 when finished, 1 when errored or canceled,
-              # 3 while the store is still working; anything else is a tool
-              # error and is retried until the deadline.
+              # The answer is the "status=<STATUS>" line the target prints. Do not
+              # use its exit code: make reports any failed recipe as exit 2.
               code=0
               output="$(make -C "${WORKING_DIRECTORY}" --no-print-directory submit-status SUBMISSION_ID="${ids[$i]}" 2>&1)" || code=$?
-              echo "${labels[$i]} (${urls[$i]}): ${output##*$'\n'} [exit ${code}]"
-              case "${code}" in
-                0) states[$i]=FINISHED; tool_errors=0 ;;
-                1) states[$i]=FAILED; failed=1; tool_errors=0 ;;
-                3) waiting=1; tool_errors=0 ;;
+              status="$(sed -n 's/^status=//p' <<< "${output}" | tail -n 1)"
+              echo "${labels[$i]} (${urls[$i]}): ${status:-no status} [make exit ${code}]"
+              case "${status}" in
+                FINISHED) states[$i]=FINISHED; tool_errors=0 ;;
+                ERRORED|CANCELED) states[$i]=FAILED; failed=1; tool_errors=0 ;;
+                IN_PROGRESS|IN_QUEUE|AWAITING_BUILD) waiting=1; tool_errors=0 ;;
                 *)
-                  # Not a store answer: show everything eas said, and give up
-                  # after a few in a row instead of retrying until the deadline.
+                  # No status from the store: show everything eas said, and give
+                  # up after a few in a row instead of retrying until the deadline.
                   echo "${output}" >&2
                   tool_errors=$(( tool_errors + 1 ))
                   if (( tool_errors >= 5 )); then
-                    echo "::error::submit-status failed ${tool_errors} times in a row (exit ${code}); see the output above"
+                    echo "::error::submit-status gave no status ${tool_errors} times in a row; see the output above"
                     echo "${labels[$i]}-status=ERROR" >> "${GITHUB_OUTPUT}"
                     exit 1
                   fi
