@@ -21,14 +21,6 @@ inputs:
   expo-token:
     description: Expo robot token (EXPO_TOKEN).
     required: true
-  release-notes-file:
-    description: >-
-      Optional path to a release notes file (relative to the repository root or
-      absolute). Passed to the spoke as RELEASE_NOTES_FILE for iOS, where it
-      becomes the TestFlight "What to Test" text. Ignored when the file is
-      missing.
-    required: false
-    default: ""
 
 outputs:
   submission-url:
@@ -48,7 +40,6 @@ runs:
         PLATFORM: ${{ inputs.platform }}
         ARTIFACT: ${{ inputs.artifact }}
         WORKING_DIRECTORY: ${{ inputs.working-directory }}
-        RELEASE_NOTES_FILE: ${{ inputs.release-notes-file }}
       run: |
         set -euo pipefail
         if [[ -z "${EXPO_TOKEN}" ]]; then
@@ -59,14 +50,8 @@ runs:
           echo "Artifact not found: ${WORKING_DIRECTORY}/${ARTIFACT}" >&2
           exit 1
         fi
-        extra=()
-        if [[ "${PLATFORM}" == "ios" && -n "${RELEASE_NOTES_FILE}" && -f "${RELEASE_NOTES_FILE}" ]]; then
-          extra+=("RELEASE_NOTES_FILE=$(cd "$(dirname -- "${RELEASE_NOTES_FILE}")" && pwd)/$(basename -- "${RELEASE_NOTES_FILE}")")
-        fi
         log="${RUNNER_TEMP}/submit-${PLATFORM}.log"
-        # ${extra[@]+...}: macOS runners ship bash 3.2, where an empty array is unbound under set -u.
-        make -C "${WORKING_DIRECTORY}" submit PLATFORM="${PLATFORM}" ARTIFACT="${ARTIFACT}" \
-          ${extra[@]+"${extra[@]}"} 2>&1 | tee "${log}"
+        make -C "${WORKING_DIRECTORY}" submit PLATFORM="${PLATFORM}" ARTIFACT="${ARTIFACT}" 2>&1 | tee "${log}"
         # eas prints "Submission details: <url>" when it queues the submission.
         url="$(grep -oE 'https://expo\.dev/[^[:space:]]*/submissions/[0-9a-fA-F-]+' "${log}" | tail -n 1 || true)"
         echo "submission-url=${url}" >> "${GITHUB_OUTPUT}"

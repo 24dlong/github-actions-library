@@ -81,37 +81,16 @@ runs:
         fi
       shell: bash
 
-    # A standard Linux runner has ~14 GB free. The eas temp copy, pnpm install,
-    # Gradle and the CMake builds of the native modules overrun it ("Disk quota
-    # exceeded"), so drop preinstalled toolchains the build never uses first.
-    # The Android SDK under /usr/local/lib/android stays.
-    - name: Free disk space
-      if: inputs.platform == 'android'
-      run: |
-        set -euo pipefail
-        df -h / /mnt || true
-        paths=(
-          /usr/share/dotnet
-          /opt/ghc
-          /usr/local/.ghcup
-          /usr/local/share/boost
-          /opt/hostedtoolcache/CodeQL
-          /usr/share/swift
-        )
-        for path in "${paths[@]}"; do
-          sudo rm -rf "${path}" &
-        done
-        wait
-        sudo docker image prune --all --force > /dev/null 2>&1 || true
-        df -h / /mnt || true
-      shell: bash
-
-    # eas build --local works in a temp copy of the repo. Put it on the runner's
-    # separate /mnt disk (when there is one) instead of the root disk.
+    # eas build --local works in a temp copy of the repo, by default under /tmp.
+    # On ubuntu-26.04 the Android build failed there with "Disk quota exceeded"
+    # although the root disk had ~88 GB free, so build elsewhere. /mnt is not a
+    # separate disk on that image; it is just a path outside /tmp.
     - name: Prepare build directory
       if: inputs.platform == 'android'
       run: |
         set -euo pipefail
+        df -h / /tmp /mnt || true
+        findmnt -T /tmp || true
         if [[ -d /mnt ]]; then
           sudo mkdir -p /mnt/eas-build
           sudo chown "$(id -u):$(id -g)" /mnt/eas-build
@@ -225,7 +204,7 @@ runs:
 
     - name: Report disk usage
       if: always() && inputs.platform == 'android'
-      run: df -h / /mnt || true
+      run: df -h / /tmp /mnt || true
       shell: bash
 
     # Right after package, before submit can fail the job. Only on a key miss

@@ -346,8 +346,7 @@ The spoke's app Makefile must provide:
   from the build profile and writes `<dir>/.artifact-path`).
 - `submit`, with `PLATFORM` and `ARTIFACT` (path relative to the app directory). It must
   queue the submission and return without waiting for the store (`eas submit --no-wait`), so a
-  macOS runner is not held while Apple processes the build. It may receive
-  `RELEASE_NOTES_FILE` (iOS), which becomes the TestFlight "What to Test" text.
+  macOS runner is not held while Apple processes the build.
 
 It may also provide these optional targets. The workflow skips or degrades without them:
 
@@ -402,10 +401,9 @@ succeeded and `Submissions` passed, so no What's New is pushed for a build the s
 It runs on Ubuntu and is `continue-on-error`: a failed push is reported in the summary and does
 not fail the run.
 
-On Android runners the build action frees preinstalled toolchains the build does not use and
-points `EAS_LOCAL_BUILD_WORKINGDIR` at `/mnt`, because the eas temp copy, `pnpm install`,
-Gradle and the native CMake builds overrun a standard runner's root disk. `df -h` is printed
-before and after the build.
+On Android runners the build action points `EAS_LOCAL_BUILD_WORKINGDIR` at `/mnt/eas-build`
+instead of eas's default under `/tmp`, where the build failed with `Disk quota exceeded` even
+though the root disk had plenty free. `df -h` is printed before and after the build.
 
 Build jobs use the `environment` input (default `production`). The caller passes
 `expo-token` and `sentry-auth-token` from `EXPO_TOKEN` and `SENTRY_AUTH_TOKEN`. The
