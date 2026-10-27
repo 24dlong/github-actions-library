@@ -344,15 +344,22 @@ The spoke's app Makefile must provide:
 - `package`, with `PLATFORM` (`ios` or `android`), `PROFILE`, optional `OUTPUT` (an exact
   artifact path), and optional `OUTPUT_DIR` (a directory; the Makefile names the file
   from the build profile and writes `<dir>/.artifact-path`).
-- `submit`, with `PLATFORM` and `ARTIFACT` (path relative to the app directory).
+- `submit`, with `PLATFORM` and `ARTIFACT` (path relative to the app directory). It must
+  queue the submission and return without waiting for the store (`eas submit --no-wait`), so a
+  macOS runner is not held while Apple processes the build. It may receive
+  `RELEASE_NOTES_FILE` (iOS), which becomes the TestFlight "What to Test" text.
 
 It may also provide these optional targets. The workflow skips or degrades without them:
 
 - `release-notes`, with `RELEASE_BODY_FILE` (the GitHub release body) and
   `RELEASE_NOTES_FILE` (where to write store-facing notes). The app decides what is
   user-facing.
+- `submit-status`, with `SUBMISSION_ID`: print the store status and exit 0 when the submission
+  finished, 1 when it errored or was canceled, 3 while it is still running. The `Submissions`
+  job polls it. Without it, submissions stay queued and nothing waits on them.
 - `metadata` (only when the `metadata` input is on), with `RELEASE_NOTES_FILE`: push the
-  store listing. The job has `APP_VERSION` and `EXPO_TOKEN` set.
+  store listing. The job has `APP_VERSION` and `EXPO_TOKEN` set. An optional `metadata-lint`
+  target runs first so an invalid store config fails before it reaches the store.
 - `handoff`, with `VERSION`, `IOS_BUILD` and `ANDROID_BUILD` (build numbers) in the
   environment: print a markdown "to ship" checklist for the job summary.
 
@@ -371,21 +378,34 @@ successful package step, on a key miss only, so a job that fails later (for exam
 submit) still warms the next run.
 
 `Mobile / Summary` reports each platform's build and submit separately (for example
-"Build succeeded, submit failed"), with the uploaded artifact name (`mobile-<platform>-<version>`),
-its path and the build number eas auto-incremented to, when it logged one. A failed submit
+"Build succeeded, submission delivered"), with the uploaded artifact name (`mobile-<platform>-<version>`),
+its path and the build number eas auto-incremented to, when it logged one. The Submit cell
+links the EAS submission and reads `queued`, `delivered`, `rejected` or `timed out`. A failed submit
 can be retried from that artifact without rebuilding:
 `make -C <app dir> submit PLATFORM=<ios|android> ARTIFACT=<path>`. The summary also links
 the release assets, reports the metadata push, shows draft release notes, and ends with the
 app's `handoff` checklist.
+
+The build jobs only queue the submission. `Mobile / Submissions` then runs on Ubuntu, so waiting
+for EAS and the stores costs Linux minutes instead of macOS ones (one observed iOS submission
+took 55 minutes to finish), and polls the spoke's `submit-status` every minute for up to 85
+minutes. It fails the run if a store rejects or
+cancels a submission, and it needs `id-token: write` like the build jobs.
 
 With `release-assets` (default true), `Mobile / Release` attaches each successful build to the
 GitHub release `v<version>` as `mobile-<platform>-<version>.<ext>`, plus
 `mobile-release-notes-<version>.md`, using `gh release upload --clobber`. These stay after the
 90-day workflow artifacts expire and give Detect its marker (below). `Mobile / Notes` builds
 the notes from the release body through the spoke's `release-notes` target and never blocks
-a build. With `metadata: true`, `Mobile / Metadata` runs `make metadata` after a successful
-iOS build (on Ubuntu, so it costs no macOS minutes). It is `continue-on-error`: a failed push
-is reported in the summary and does not fail the run.
+a build. With `metadata: true`, `Mobile / Metadata` runs `make metadata` after the iOS build
+succeeded and `Submissions` passed, so no What's New is pushed for a build the store rejected.
+It runs on Ubuntu and is `continue-on-error`: a failed push is reported in the summary and does
+not fail the run.
+
+On Android runners the build action frees preinstalled toolchains the build does not use and
+points `EAS_LOCAL_BUILD_WORKINGDIR` at `/mnt`, because the eas temp copy, `pnpm install`,
+Gradle and the native CMake builds overrun a standard runner's root disk. `df -h` is printed
+before and after the build.
 
 Build jobs use the `environment` input (default `production`). The caller passes
 `expo-token` and `sentry-auth-token` from `EXPO_TOKEN` and `SENTRY_AUTH_TOKEN`. The
@@ -393,8 +413,8 @@ caller job must grant `id-token: write`, `contents: write` (release assets) and
 `actions: write`. A called workflow that asks for more permissions than its caller grants
 fails the whole run at startup, so grant `contents: write` before moving `@v7` to a version
 with release assets (7.3.0). Name the caller job `Mobile` so the checks are `Mobile / Detect`,
-`Mobile / Notes`, `Mobile / Android`, `Mobile / iOS`, `Mobile / Release`, `Mobile / Metadata`
-and `Mobile / Summary`.
+`Mobile / Notes`, `Mobile / Android`, `Mobile / iOS`, `Mobile / Submissions`, `Mobile / Release`,
+`Mobile / Metadata` and `Mobile / Summary`.
 
 `Detect` (the `actions/javascript/expo/detect` action) decides whether to build. It compares
 the release tag `v<version>` with the newest older release that has `mobile-<platform>-*`

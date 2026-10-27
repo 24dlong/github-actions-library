@@ -4,11 +4,13 @@
 # Jobs: Detect (builds only when `paths` changed since the last release whose
 # mobile builds were attached, or when forced), Notes (store-facing release
 # notes), Android on ubuntu-26.04, iOS on macos-26 with Xcode 26.4.1, then
-# Release (attaches the builds and notes to the GitHub release), Metadata
-# (optional App Store listing push) and Summary.
+# Submissions (waits on Ubuntu for the stores to accept the queued
+# submissions; the build jobs never wait), Release (attaches the builds and
+# notes to the GitHub release), Metadata (optional App Store listing push after
+# Submissions passed) and Summary.
 # With a caller job named Mobile, the checks are Mobile / Detect, Mobile /
-# Notes, Mobile / Android, Mobile / iOS, Mobile / Release, Mobile / Metadata
-# and Mobile / Summary.
+# Notes, Mobile / Android, Mobile / iOS, Mobile / Submissions, Mobile /
+# Release, Mobile / Metadata and Mobile / Summary.
 #
 # Reads these caller repository (or GitHub Environment) variables, all
 # CodeArtifact: AWS_CODE_ARTIFACT_ACCOUNT_ID, AWS_REGION, AWS_ROLE_TO_ASSUME,
@@ -183,6 +185,8 @@ jobs:
       build-number: ${{ steps.build.outputs.build-number }}
       build-result: ${{ steps.build.outcome }}
       submit-result: ${{ steps.submit.outcome }}
+      submission-url: ${{ steps.submit.outputs.submission-url }}
+      submission-id: ${{ steps.submit.outputs.submission-id }}
     steps:
       - id: build
         uses: 24dlong/github-actions-library/actions/javascript/expo/build@v7
@@ -212,8 +216,12 @@ jobs:
 
   ios:
     name: iOS
-    needs: detect
-    if: needs.detect.outputs.build == 'true' && contains(inputs.platforms, 'ios')
+    # Notes feed the TestFlight "What to Test" text. They are a convenience, so
+    # run even when that job failed (!cancelled), but only after Detect passed.
+    needs: [detect, notes]
+    if: >-
+      !cancelled() && needs.detect.result == 'success'
+      && needs.detect.outputs.build == 'true' && contains(inputs.platforms, 'ios')
     runs-on: macos-26
     timeout-minutes: 60
     environment: ${{ inputs.environment }}
@@ -229,6 +237,8 @@ jobs:
       build-number: ${{ steps.build.outputs.build-number }}
       build-result: ${{ steps.build.outcome }}
       submit-result: ${{ steps.submit.outcome }}
+      submission-url: ${{ steps.submit.outputs.submission-url }}
+      submission-id: ${{ steps.submit.outputs.submission-id }}
     steps:
       - id: build
         uses: 24dlong/github-actions-library/actions/javascript/expo/build@v7
@@ -246,6 +256,13 @@ jobs:
           codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
           codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
 
+      - name: Download release notes
+        if: inputs.submit && needs.notes.outputs.artifact-name != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.notes.outputs.artifact-name }}
+          path: ${{ runner.temp }}/notes
+
       - name: Submit
         id: submit
         if: inputs.submit
@@ -255,6 +272,7 @@ jobs:
           platform: ios
           artifact: ${{ steps.build.outputs.artifact-path }}
           expo-token: ${{ secrets.expo-token }}
+          release-notes-file: ${{ needs.notes.outputs.artifact-name != '' && format('{0}/notes/release-notes.md', runner.temp) || '' }}
 
   release:
     name: Release
@@ -320,12 +338,114 @@ jobs:
           gh release upload "v${VERSION}" "${files[@]}" --clobber
           echo "url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}" >> "${GITHUB_OUTPUT}"
 
+  submissions:
+    name: Submissions
+    needs: [detect, android, ios]
+    # eas submit only queues the submission (it does not wait, so a macOS
+    # runner is not held for the store). This job waits on cheap Ubuntu time and
+    # fails the run if Apple or Google rejects the build.
+    if: >-
+      always() && !cancelled() && inputs.submit
+      && (needs.android.outputs.submission-id != '' || needs.ios.outputs.submission-id != '')
+    runs-on: ubuntu-26.04
+    # The v1.4.0 iOS submission took 55 minutes to finish on EAS's free-plan
+    # queue, so leave generous room.
+    timeout-minutes: 90
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      android-status: ${{ steps.wait.outputs.android-status }}
+      ios-status: ${{ steps.wait.outputs.ios-status }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Setup JavaScript
+        uses: 24dlong/github-actions-library/actions/javascript/setup-no-install@v7
+        with:
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
+
+      - name: Wait for submissions
+        id: wait
+        env:
+          EXPO_TOKEN: ${{ secrets.expo-token }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          ANDROID_ID: ${{ needs.android.outputs.submission-id }}
+          ANDROID_URL: ${{ needs.android.outputs.submission-url }}
+          IOS_ID: ${{ needs.ios.outputs.submission-id }}
+          IOS_URL: ${{ needs.ios.outputs.submission-url }}
+        run: |
+          set -euo pipefail
+          # The spoke owns the eas call. Without its submit-status target there
+          # is nothing to wait on; the submissions stay queued with EAS.
+          if ! make -C "${WORKING_DIRECTORY}" --dry-run submit-status > /dev/null 2>&1; then
+            echo "::notice::No submit-status target in ${WORKING_DIRECTORY}/Makefile, not waiting for submissions"
+            exit 0
+          fi
+
+          labels=()
+          ids=()
+          urls=()
+          if [[ -n "${ANDROID_ID}" ]]; then labels+=(android); ids+=("${ANDROID_ID}"); urls+=("${ANDROID_URL}"); fi
+          if [[ -n "${IOS_ID}" ]]; then labels+=(ios); ids+=("${IOS_ID}"); urls+=("${IOS_URL}"); fi
+
+          states=()
+          for i in "${!ids[@]}"; do states+=(pending); done
+          failed=0
+          deadline=$(( SECONDS + 85 * 60 ))
+          while :; do
+            waiting=0
+            for i in "${!ids[@]}"; do
+              [[ "${states[$i]}" == pending ]] || continue
+              # submit-status exits 0 when finished, 1 when errored or canceled,
+              # 3 while the store is still working; anything else is a tool
+              # error and is retried until the deadline.
+              code=0
+              output="$(make -C "${WORKING_DIRECTORY}" --no-print-directory submit-status SUBMISSION_ID="${ids[$i]}" 2>&1)" || code=$?
+              echo "${labels[$i]} (${urls[$i]}): ${output##*$'\n'} [exit ${code}]"
+              case "${code}" in
+                0) states[$i]=FINISHED ;;
+                1) states[$i]=FAILED; failed=1 ;;
+                *) waiting=1 ;;
+              esac
+              echo "${labels[$i]}-status=${states[$i]}" >> "${GITHUB_OUTPUT}"
+            done
+            (( waiting )) || break
+            if (( SECONDS >= deadline )); then
+              echo "::error::Timed out waiting for the store to finish the submission(s)"
+              for i in "${!ids[@]}"; do
+                [[ "${states[$i]}" == pending ]] && echo "${labels[$i]}-status=TIMEOUT" >> "${GITHUB_OUTPUT}"
+              done
+              failed=1
+              break
+            fi
+            sleep 60
+          done
+          if (( failed )); then
+            for i in "${!ids[@]}"; do
+              if [[ "${states[$i]}" != FINISHED ]]; then
+                echo "::error::${labels[$i]} submission did not finish: ${urls[$i]}"
+              fi
+            done
+            exit 1
+          fi
+
   metadata:
     name: Metadata
-    needs: [detect, notes, ios]
+    # Runs after Submissions so no What's New is pushed for a build the store
+    # rejected.
+    needs: [detect, notes, ios, submissions]
     if: >-
       always() && !cancelled() && inputs.metadata
       && needs.ios.outputs.build-result == 'success'
+      && needs.submissions.result == 'success'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: ${{ inputs.environment }}
@@ -369,12 +489,16 @@ jobs:
           WORKING_DIRECTORY: ${{ inputs.working-directory }}
         run: |
           set -euo pipefail
+          # Fail fast on an invalid store config, before touching App Store Connect.
+          if make -C "${WORKING_DIRECTORY}" --dry-run metadata-lint > /dev/null 2>&1; then
+            make -C "${WORKING_DIRECTORY}" metadata-lint
+          fi
           make -C "${WORKING_DIRECTORY}" metadata \
             RELEASE_NOTES_FILE="${RUNNER_TEMP}/notes/release-notes.md"
 
   summary:
     name: Summary
-    needs: [detect, notes, android, ios, release, metadata]
+    needs: [detect, notes, android, ios, submissions, release, metadata]
     if: always() && !cancelled() && needs.detect.outputs.build == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 10
@@ -395,6 +519,11 @@ jobs:
       - name: Write summary
         env:
           WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          SUBMISSIONS_RESULT: ${{ needs.submissions.result }}
+          ANDROID_SUBMISSION_URL: ${{ needs.android.outputs.submission-url }}
+          ANDROID_DELIVERY: ${{ needs.submissions.outputs.android-status }}
+          IOS_SUBMISSION_URL: ${{ needs.ios.outputs.submission-url }}
+          IOS_DELIVERY: ${{ needs.submissions.outputs.ios-status }}
           RELEASE_URL: ${{ needs.release.outputs.url }}
           RELEASE_RESULT: ${{ needs.release.result }}
           METADATA_REQUESTED: ${{ inputs.metadata }}
@@ -425,9 +554,14 @@ jobs:
             esac
           }
           # Args: label, job result, build outcome, submit outcome, artifact
-          # name, artifact path, build number. Prints one table row.
+          # name, artifact path, build number, submission URL, delivery
+          # (FINISHED, FAILED, TIMEOUT or empty). Prints one table row. A
+          # successful submit step only means the submission is queued with EAS;
+          # Submissions reports whether the store accepted it.
           row() {
-            local label="$1" job="$2" build="$3" submit="$4" status
+            local label="$1" job="$2" build="$3" submit="$4" status delivery cell
+            local url="${8:-}"
+            local result="${9:-}"
             if [[ "${job}" == "skipped" ]]; then
               build="not requested"
               submit="n/a"
@@ -449,11 +583,22 @@ jobs:
             elif [[ "${submit}" == "disabled" ]]; then
               status="Build succeeded, submit disabled"
             elif [[ "${submit}" == "success" ]]; then
-              status="Build and submit succeeded"
+              case "${result}" in
+                FINISHED) delivery=delivered ;;
+                FAILED) delivery=rejected ;;
+                TIMEOUT) delivery="timed out" ;;
+                *) delivery=queued ;;
+              esac
+              submit="${delivery}"
+              status="Build succeeded, submission ${delivery}"
             else
               status="Build succeeded, submit $(past "${submit}")"
             fi
-            echo "| ${label} | ${status} | ${build} | ${submit} | \`${5:-n/a}\` | \`${6:-n/a}\` | ${7:-n/a} |"
+            cell="${submit}"
+            if [[ -n "${url}" ]]; then
+              cell="[${submit}](${url})"
+            fi
+            echo "| ${label} | ${status} | ${build} | ${cell} | \`${5:-n/a}\` | \`${6:-n/a}\` | ${7:-n/a} |"
           }
           {
             echo "## Expo publish"
@@ -465,9 +610,11 @@ jobs:
             echo "| Platform | Status | Build | Submit | Artifact | Path | Build number |"
             echo "| --- | --- | --- | --- | --- | --- | --- |"
             row Android "${ANDROID_RESULT}" "${ANDROID_BUILD}" "${ANDROID_SUBMIT}" \
-              "${ANDROID_ARTIFACT_NAME}" "${ANDROID_ARTIFACT}" "${ANDROID_BUILD_NUMBER}"
+              "${ANDROID_ARTIFACT_NAME}" "${ANDROID_ARTIFACT}" "${ANDROID_BUILD_NUMBER}" \
+              "${ANDROID_SUBMISSION_URL}" "${ANDROID_DELIVERY}"
             row iOS "${IOS_RESULT}" "${IOS_BUILD}" "${IOS_SUBMIT}" \
-              "${IOS_ARTIFACT_NAME}" "${IOS_ARTIFACT}" "${IOS_BUILD_NUMBER}"
+              "${IOS_ARTIFACT_NAME}" "${IOS_ARTIFACT}" "${IOS_BUILD_NUMBER}" \
+              "${IOS_SUBMISSION_URL}" "${IOS_DELIVERY}"
             echo
             case "${RELEASE_RESULT}" in
               success) echo "- Release assets: [v${VERSION}](${RELEASE_URL})" ;;

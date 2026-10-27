@@ -3,7 +3,10 @@ description: >-
   Submits a locally built Expo artifact (the spoke's `make submit`). Run it in
   the same job as Expo Build, after that action: it does not check out or
   install. The spoke Makefile chooses the submit profile (production: TestFlight
-  and the Play internal track).
+  and the Play internal track). The spoke queues the submission and returns
+  without waiting for the store, so a green step means "queued with EAS". Use
+  the submission outputs to check the outcome later (Expo Application Publish
+  does, in its Submissions job).
 
 inputs:
   working-directory:
@@ -18,16 +21,34 @@ inputs:
   expo-token:
     description: Expo robot token (EXPO_TOKEN).
     required: true
+  release-notes-file:
+    description: >-
+      Optional path to a release notes file (relative to the repository root or
+      absolute). Passed to the spoke as RELEASE_NOTES_FILE for iOS, where it
+      becomes the TestFlight "What to Test" text. Ignored when the file is
+      missing.
+    required: false
+    default: ""
+
+outputs:
+  submission-url:
+    description: EAS submission details URL. Empty if the spoke's output had none.
+    value: ${{ steps.submit.outputs.submission-url }}
+  submission-id:
+    description: EAS submission id, the last segment of submission-url.
+    value: ${{ steps.submit.outputs.submission-id }}
 
 runs:
   using: composite
   steps:
     - name: Submit
+      id: submit
       env:
         EXPO_TOKEN: ${{ inputs.expo-token }}
         PLATFORM: ${{ inputs.platform }}
         ARTIFACT: ${{ inputs.artifact }}
         WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        RELEASE_NOTES_FILE: ${{ inputs.release-notes-file }}
       run: |
         set -euo pipefail
         if [[ -z "${EXPO_TOKEN}" ]]; then
@@ -38,5 +59,16 @@ runs:
           echo "Artifact not found: ${WORKING_DIRECTORY}/${ARTIFACT}" >&2
           exit 1
         fi
-        make -C "${WORKING_DIRECTORY}" submit PLATFORM="${PLATFORM}" ARTIFACT="${ARTIFACT}"
+        extra=()
+        if [[ "${PLATFORM}" == "ios" && -n "${RELEASE_NOTES_FILE}" && -f "${RELEASE_NOTES_FILE}" ]]; then
+          extra+=("RELEASE_NOTES_FILE=$(cd "$(dirname -- "${RELEASE_NOTES_FILE}")" && pwd)/$(basename -- "${RELEASE_NOTES_FILE}")")
+        fi
+        log="${RUNNER_TEMP}/submit-${PLATFORM}.log"
+        # ${extra[@]+...}: macOS runners ship bash 3.2, where an empty array is unbound under set -u.
+        make -C "${WORKING_DIRECTORY}" submit PLATFORM="${PLATFORM}" ARTIFACT="${ARTIFACT}" \
+          ${extra[@]+"${extra[@]}"} 2>&1 | tee "${log}"
+        # eas prints "Submission details: <url>" when it queues the submission.
+        url="$(grep -oE 'https://expo\.dev/[^[:space:]]*/submissions/[0-9a-fA-F-]+' "${log}" | tail -n 1 || true)"
+        echo "submission-url=${url}" >> "${GITHUB_OUTPUT}"
+        echo "submission-id=${url##*/}" >> "${GITHUB_OUTPUT}"
       shell: bash
