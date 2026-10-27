@@ -1,3 +1,30 @@
+## 7.4.0 (2026-10-27)
+
+
+- feat: queue Expo submissions without waiting, check them on Ubuntu, fix Android disk (#113)
+- * fix: keep Android Expo builds from filling the runner disk
+- The Android build died with "Disk quota exceeded" on a standard runner
+(Gradle lint, CMake and the lockfile writes). Free preinstalled toolchains the
+build does not use, move the eas build working directory to /mnt, and print df
+before and after so the next failure shows numbers.
+- Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+- * feat: queue Expo submissions without waiting and check them on Ubuntu
+- eas submit waited for the store on the macOS runner and hit the job timeout
+(48 minutes of 10x minutes). The submit step now only queues the submission and
+reports its URL and id. A new Submissions job polls the spoke's submit-status
+target on Ubuntu and fails the run if a store rejects the build. The summary
+shows queued, delivered, rejected or timed out with a link, and Metadata now
+runs only after Submissions passed.
+- iOS submissions also pass the release notes to the spoke as
+RELEASE_NOTES_FILE, which the app turns into TestFlight "What to Test".
+- Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+- * fix: allow Submissions to wait up to 85 minutes
+- An observed iOS submission took 55 minutes on the EAS queue, longer than the
+55-minute poll deadline planned for it.
+- Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+- ---------
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
 ## 7.3.0 (2026-10-26)
 
 
