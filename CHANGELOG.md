@@ -1,3 +1,14 @@
+## 7.4.2 (2026-10-27)
+
+
+- fix: read the submission status line instead of make's exit code (#115)
+- make reports any failed recipe as exit 2, so the spoke's exit 3 for "still
+running" reached the Submissions job as a tool error and failed it after five
+polls (run 40574876645) although both submissions finished normally. The poll
+now classifies the "status=<STATUS>" line the spoke prints and keeps the
+fail-fast on polls that return no status.
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
 ## 7.4.1 (2026-10-27)
 
 
