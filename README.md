@@ -387,8 +387,9 @@ the release assets, reports the metadata push, shows draft release notes, and en
 app's `handoff` checklist.
 
 The build jobs only queue the submission. `Mobile / Submissions` then runs on Ubuntu, so waiting
-for Apple or Google costs about 15 to 20 Linux minutes instead of a macOS runner, and polls the
-spoke's `submit-status` every minute for up to 55 minutes. It fails the run if a store rejects or
+for EAS and the stores costs Linux minutes instead of macOS ones (one observed iOS submission
+took 55 minutes to finish), and polls the spoke's `submit-status` every minute for up to 85
+minutes. It fails the run if a store rejects or
 cancels a submission, and it needs `id-token: write` like the build jobs.
 
 With `release-assets` (default true), `Mobile / Release` attaches each successful build to the

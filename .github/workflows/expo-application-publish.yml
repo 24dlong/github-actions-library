@@ -348,7 +348,9 @@ jobs:
       always() && !cancelled() && inputs.submit
       && (needs.android.outputs.submission-id != '' || needs.ios.outputs.submission-id != '')
     runs-on: ubuntu-26.04
-    timeout-minutes: 60
+    # The v1.4.0 iOS submission took 55 minutes to finish on EAS's free-plan
+    # queue, so leave generous room.
+    timeout-minutes: 90
     environment: ${{ inputs.environment }}
     permissions:
       id-token: write
@@ -397,7 +399,7 @@ jobs:
           states=()
           for i in "${!ids[@]}"; do states+=(pending); done
           failed=0
-          deadline=$(( SECONDS + 55 * 60 ))
+          deadline=$(( SECONDS + 85 * 60 ))
           while :; do
             waiting=0
             for i in "${!ids[@]}"; do
