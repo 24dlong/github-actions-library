@@ -1,3 +1,19 @@
+## 7.4.1 (2026-10-27)
+
+
+- fix: repair Expo submit follow-ups found in the first 7.4.0 run (#114)
+- - Stop passing the release notes to the submit step. EAS rejected
+  --what-to-test ("changelog" is Enterprise plan only), which failed iOS submit.
+- Submissions now installs dependencies (setup, not setup-no-install): eas
+  loads the app config and its plugins even to read a submission, so every poll
+  failed. The poll now prints eas's full output on tool errors and stops after
+  five in a row instead of retrying until the deadline.
+- Release passes --repo to gh release upload; the job has no checkout.
+- Android: drop the unnecessary free-disk step (the root disk had 88 GB free).
+  The build died under /tmp with "Disk quota exceeded", and building in
+  /mnt/eas-build is what fixed it. Report df for /tmp as well.
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
 ## 7.4.0 (2026-10-27)
 
 
