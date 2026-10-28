@@ -378,7 +378,16 @@ app commits one), and the React Native core, dependencies and Hermes tarballs in
 successful package step, on a key miss only, so a job that fails later (for example at
 submit) still warms the next run.
 
-`Mobile / Summary` reports each platform's build and submit separately (for example
+`Mobile / Summary` starts with a status banner. When everything succeeded it is a note; when
+anything failed it is a caution that names each problem (a build, a submission that could not be
+queued, a store that rejected or never finished a submission, release assets that were not
+attached), links the EAS submission and the run, and is followed by a "Recover" list with the
+retry steps that fit those problems. Each problem is also an `::error` annotation on the run, so
+it shows on the run page without opening the summary; a failed metadata push is a warning. The
+banner also appears when `Mobile / Detect` fails (the rest of the summary is skipped then). The
+job never fails the run itself: the stage that failed already does.
+
+It then reports each platform's build and submit separately (for example
 "Build succeeded, submission delivered"), with the uploaded artifact name (`mobile-<platform>-<version>`),
 its path and the build number eas auto-incremented to, when it logged one. The Submit cell
 links the EAS submission and reads `queued`, `delivered`, `rejected` or `timed out`. A failed submit

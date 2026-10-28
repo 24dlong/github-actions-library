@@ -7,7 +7,8 @@
 # Submissions (waits on Ubuntu for the stores to accept the queued
 # submissions; the build jobs never wait), Release (attaches the builds and
 # notes to the GitHub release), Metadata (optional App Store listing push after
-# Submissions passed) and Summary.
+# Submissions passed) and Summary (a status banner with recovery steps, then
+# the per-platform table and the store checklist).
 # With a caller job named Mobile, the checks are Mobile / Detect, Mobile /
 # Notes, Mobile / Android, Mobile / iOS, Mobile / Submissions, Mobile /
 # Release, Mobile / Metadata and Mobile / Summary.
@@ -503,7 +504,11 @@ jobs:
   summary:
     name: Summary
     needs: [detect, notes, android, ios, submissions, release, metadata]
-    if: always() && !cancelled() && needs.detect.outputs.build == 'true'
+    # Also runs when Detect fails, so a broken change check still leaves a
+    # banner instead of an empty summary.
+    if: >-
+      always() && !cancelled()
+      && (needs.detect.outputs.build == 'true' || needs.detect.result == 'failure')
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
@@ -523,6 +528,7 @@ jobs:
       - name: Write summary
         env:
           WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          DETECT_RESULT: ${{ needs.detect.result }}
           SUBMISSIONS_RESULT: ${{ needs.submissions.result }}
           ANDROID_SUBMISSION_URL: ${{ needs.android.outputs.submission-url }}
           ANDROID_DELIVERY: ${{ needs.submissions.outputs.android-status }}
@@ -605,7 +611,124 @@ jobs:
             fi
             echo "| ${label} | ${status} | ${build} | ${cell} | \`${5:-n/a}\` | \`${6:-n/a}\` | ${7:-n/a} |"
           }
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          problems=()
+          warnings=()
+          kinds=" "
+          # Args: kind (selects the recovery hint), label, stage, message. Adds
+          # the problem to the banner and annotates the run, so a failure is
+          # visible on the run page without opening this summary.
+          problem() {
+            problems+=("${2} ${3}: ${4}")
+            [[ "${kinds}" == *" $1 "* ]] || kinds+="$1 "
+            echo "::error title=Mobile ${2} ${3} failed::${4}"
+          }
+          # Args: label, stage, message. Non-blocking: reported, never fails the run.
+          warn() {
+            warnings+=("${1} ${2}: ${3}")
+            echo "::warning title=Mobile ${1} ${2}::${3}"
+          }
+          # Args: label, job result, build outcome, submit outcome, delivery
+          # (see row), submission URL. Records the first problem on a platform:
+          # build, then queueing the submission, then the store's answer.
+          check() {
+            local label="$1" job="$2" build="$3" submit="$4" delivery="$5" url="${6:-}"
+            local see=""
+            [[ "${job}" == "skipped" ]] && return 0
+            [[ -z "${url}" ]] || see=" See ${url}."
+            build="${build:-${job}}"
+            if [[ "${build}" != "success" ]]; then
+              problem build "${label}" build "the build $(past "${build}"). Open the ${label} job for the cause."
+              return 0
+            fi
+            [[ "${SUBMIT}" == "true" ]] || return 0
+            submit="${submit:-${job}}"
+            if [[ "${submit}" != "success" ]]; then
+              problem queue "${label}" submit "the build succeeded but the submission could not be queued (submit $(past "${submit}")). Open the ${label} job for the cause."
+              return 0
+            fi
+            case "${delivery}" in
+              FINISHED) ;;
+              FAILED) problem store "${label}" submission "the store rejected or cancelled the submission.${see}" ;;
+              TIMEOUT) problem store "${label}" submission "the submission had not finished when the wait ended.${see}" ;;
+              ERROR) problem store "${label}" submission "the submission status could not be read.${see}" ;;
+              "")
+                # Submissions can fail before it reports a platform's status.
+                case "${SUBMISSIONS_RESULT}" in
+                  failure | cancelled) problem store "${label}" submission "the store result is unknown because Submissions $(past "${SUBMISSIONS_RESULT}").${see}" ;;
+                esac
+                ;;
+              *) problem store "${label}" submission "the submission ended in an unexpected state (${delivery}).${see}" ;;
+            esac
+          }
+          # Prints the recovery hints for the kinds of problem found.
+          recovery() {
+            echo "#### Recover"
+            echo
+            if [[ "${kinds}" == *" detect "* ]]; then
+              echo "- **Change check failed**: open the Detect job, fix the cause, then re-run it, or dispatch Merge Workflow with \`force-mobile\`."
+            fi
+            if [[ "${kinds}" == *" build "* ]]; then
+              echo "- **Build failed**: fix the cause, then use *Re-run failed jobs* on [this run](${run_url}). It keeps version \`${VERSION}\`, takes a new build number, and builds only the failed platform. Avoid *Re-run all jobs*: it rebuilds and resubmits the platform that already succeeded. A run that never reaches the stores also leaves no release assets, so the next release rebuilds these changes by itself."
+            fi
+            if [[ "${kinds}" == *" queue "* ]]; then
+              echo "- **Submission not queued**: the build is the workflow artifact \`mobile-<platform>-${VERSION}\` on [this run](${run_url}#artifacts). Fix the cause (usually a store credential in EAS), then re-run the failed job, or submit that artifact by hand: \`make -C ${WORKING_DIRECTORY} submit PLATFORM=<ios|android> ARTIFACT=<path>\`."
+            fi
+            if [[ "${kinds}" == *" store "* ]]; then
+              echo "- **Store did not accept the build**: the EAS submission link above gives the store's reason. Fix it in App Store Connect or Play Console, then submit the same artifact again: \`make -C ${WORKING_DIRECTORY} submit PLATFORM=<ios|android> ARTIFACT=<path>\` (the artifact is on [this run](${run_url}#artifacts)). If the reason is a duplicate or too-low build number, rebuild instead: dispatch Merge Workflow with \`force-mobile\`."
+            fi
+            if [[ "${kinds}" == *" assets "* ]]; then
+              echo "- **Release assets not attached**: re-run the Release job. Uploads use \`--clobber\`, so repeating them is safe. Until they are attached, Detect treats the release as not built."
+            fi
+            if [[ "${kinds}" == *" metadata "* ]]; then
+              echo "- **Metadata push failed**: the builds are unaffected. Re-run the Metadata job, or run \`make -C ${WORKING_DIRECTORY} metadata\` locally."
+            fi
+          }
+          # The headline is the first thing in the summary.
+          banner() {
+            local item
+            if (( ${#problems[@]} )); then
+              echo "> [!CAUTION]"
+              echo "> **Mobile publish${VERSION:+ of \`${VERSION}\`} needs attention.** [Run](${run_url})"
+              for item in "${problems[@]}"; do echo "> - ${item}"; done
+            elif [[ "${SUBMIT}" == "true" ]]; then
+              echo "> [!NOTE]"
+              echo "> **Mobile publish of \`${VERSION}\` succeeded.** Builds are submitted; moving them to store review is manual (checklist below)."
+            else
+              echo "> [!NOTE]"
+              echo "> **Mobile builds of \`${VERSION}\` succeeded.** Submit was disabled for this run."
+            fi
+            if (( ${#warnings[@]} )); then
+              echo ">"
+              for item in "${warnings[@]}"; do echo "> - Warning: ${item}"; done
+            fi
+            if (( ${#problems[@]} + ${#warnings[@]} )); then
+              echo
+              recovery
+            fi
+            echo
+          }
+
+          if [[ "${DETECT_RESULT}" == "failure" ]]; then
+            problem detect Change check "Detect failed, so no mobile build was attempted for this release."
+            banner >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          check Android "${ANDROID_RESULT}" "${ANDROID_BUILD}" "${ANDROID_SUBMIT}" \
+            "${ANDROID_DELIVERY}" "${ANDROID_SUBMISSION_URL}"
+          check iOS "${IOS_RESULT}" "${IOS_BUILD}" "${IOS_SUBMIT}" \
+            "${IOS_DELIVERY}" "${IOS_SUBMISSION_URL}"
+          case "${RELEASE_RESULT}" in
+            failure | cancelled) problem assets Release assets "attaching the builds to v${VERSION} $(past "${RELEASE_RESULT}"). Open the Release job for the cause." ;;
+          esac
+          if [[ "${METADATA_REQUESTED}" == "true" && "${METADATA_RESULT}" != "skipped" && "${METADATA_PUSH}" != "success" ]]; then
+            kinds+="metadata "
+            warn "App Store" metadata "the listing push did not succeed. See the Metadata job."
+          fi
+
           {
+            banner
             echo "## Expo publish"
             echo
             echo "- Version: \`${VERSION}\`"
