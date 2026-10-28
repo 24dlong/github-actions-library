@@ -232,25 +232,3 @@ runs:
         name: mobile-${{ inputs.platform }}-${{ inputs.version }}
         path: ${{ inputs.working-directory }}/${{ steps.package.outputs.path }}
         if-no-files-found: error
-
-    - name: Collect iOS gym logs
-      id: gym
-      if: always() && inputs.platform == 'ios'
-      run: |
-        set -euo pipefail
-        if [[ -d "${HOME}/Library/Logs/gym" ]]; then
-          mkdir -p gym-logs
-          cp -R "${HOME}/Library/Logs/gym/." gym-logs/
-          echo "found=true" >> "${GITHUB_OUTPUT}"
-        else
-          echo "found=false" >> "${GITHUB_OUTPUT}"
-        fi
-      shell: bash
-
-    - name: Upload gym logs
-      if: always() && steps.gym.outputs.found == 'true'
-      uses: actions/upload-artifact@v7
-      with:
-        name: mobile-ios-gym-${{ inputs.version }}
-        path: gym-logs
-        if-no-files-found: ignore
