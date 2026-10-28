@@ -1,3 +1,17 @@
+## 7.5.0 (2026-10-28)
+
+
+- feat: add a failure banner with recovery steps to the Expo publish summary (#116)
+- Summary now opens with a status banner. A failed build, a submission that
+could not be queued, a store rejection or timeout, or failed release assets
+become cautions with a stage-specific recovery list and ::error annotations,
+so a red run is understandable without reading job logs. A failed metadata
+push is a warning. Summary also runs when Detect fails.
+- Removes the Collect/Upload iOS gym logs steps from the build action: the
+~/Library/Logs/gym directory never exists in eas local builds, so they never
+uploaded anything.
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
 ## 7.4.2 (2026-10-27)
 
 
