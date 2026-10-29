@@ -1,10 +1,14 @@
 name: Expo Detect
 description: >-
-  Decides whether a release needs native Expo builds. Compares the release tag
-  (v<version>) with the last release that has mobile build assets attached
-  (falling back to the previous v* tag) and builds only when a path in `paths`
-  changed between them. A release that never got its builds, because they
-  failed or were dropped, is therefore compared again by the next release.
+  Decides whether a release needs mobile work (a native build or an OTA
+  update). Compares the release tag (v<version>) with the last release that
+  has mobile assets attached (falling back to the previous v* tag) and acts
+  only when a path in `paths` changed between them. A release counts as handled
+  when every platform has a build asset (`mobile-<platform>-*`) or an OTA
+  record (`mobile-ota-<platform>-*`). A release that never got either, because
+  the work failed or was dropped, is therefore compared again by the next
+  release. Whether the work is a build or an OTA update is Expo Fingerprint's
+  call, not this action's.
   Checks out the repository itself (full history), so run
   it as its own job. Also resolves the version to build when a forced run has
   nothing newly released.
@@ -28,8 +32,9 @@ inputs:
     default: "false"
   platforms:
     description: >-
-      Comma-separated platforms the caller builds. A release counts as built
-      only when it has an asset named mobile-<platform>-* for every one.
+      Comma-separated platforms the caller publishes. A release counts as
+      handled only when it has an asset named mobile-<platform>-* or
+      mobile-ota-<platform>-* for every one.
     required: false
     default: ios,android
   github-token:
@@ -39,7 +44,7 @@ inputs:
 
 outputs:
   build:
-    description: "'true' if native builds should run, otherwise 'false'."
+    description: "'true' if mobile work (a build or an OTA update) should run, otherwise 'false'."
     value: ${{ steps.decide.outputs.build }}
   version:
     description: Version to build. Empty when nothing was released and `force` is false.
@@ -106,8 +111,9 @@ runs:
             reason="Tag v${version} not found, cannot compare"
           else
             # Prefer the newest older release whose assets show the mobile
-            # build finished. The release job attaches mobile-<platform>-*
-            # files; a failed or skipped build leaves none.
+            # work finished. The release job attaches mobile-<platform>-*
+            # build files and mobile-ota-<platform>-* update records; a failed
+            # or skipped run leaves none.
             platforms="$(jq -Rc 'split(",") | map(gsub("\\s"; "")) | map(select(length > 0))' <<< "${INPUT_PLATFORMS}")"
             built=""
             while IFS= read -r tag; do
@@ -123,7 +129,7 @@ runs:
                     | select(.draft | not)
                     | select(.tag_name | startswith("v"))
                     | select(.assets as $assets
-                        | $platforms | all(. as $p | $assets | any(.name | startswith("mobile-\($p)-"))))
+                        | $platforms | all(. as $p | $assets | any(.name | startswith("mobile-\($p)-") or startswith("mobile-ota-\($p)-"))))
                     | .tag_name' \
                 || true
             )
