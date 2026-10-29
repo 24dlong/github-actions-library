@@ -1,3 +1,12 @@
+## 7.7.0 (2026-10-29)
+
+
+- feat: add a working-directory input to expo-upgrade (#118)
+- Lets monorepos run expo install --fix in the Expo app's directory
+(e.g. apps/mobile). Defaults to the repository root, so existing
+callers are unchanged.
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
 ## 7.6.0 (2026-10-29)
 
 
