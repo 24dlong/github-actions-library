@@ -67,14 +67,17 @@ runs:
       run: make registry-auth
       shell: bash
 
-    # expo install --fix does not understand pnpm catalogs: it replaces a
-    # catalog: specifier with a literal version and leaves the catalog stale.
-    # Record the specifiers now so they can be put back afterwards.
-    - name: Record Catalog Specifiers
+    # expo install --fix leaves two things wrong that this action repairs:
+    # - it does not understand pnpm catalogs: it replaces a catalog: specifier
+    #   with a literal version and leaves the catalog stale;
+    # - it moves react-native but not its @react-native/* companions, which
+    #   are not in Expo's version map and must match react-native exactly.
+    # Record the specifiers now so they can be reconciled afterwards.
+    - name: Record Specifiers
       working-directory: ${{ inputs.working-directory }}
       env:
         ACTION_PATH: ${{ github.action_path }}
-      run: node "$ACTION_PATH/restore-catalog.mjs" snapshot "$RUNNER_TEMP/expo-catalog-specifiers.json"
+      run: node "$ACTION_PATH/reconcile-specifiers.mjs" snapshot "$RUNNER_TEMP/expo-specifiers.json"
       shell: bash
 
     - name: Upgrade Expo Dependencies
@@ -91,20 +94,34 @@ runs:
         pnpm exec expo install --check
       shell: bash
 
-    - name: Restore Catalog Specifiers
-      id: catalog
+    - name: Reconcile Specifiers
+      id: reconcile
       working-directory: ${{ inputs.working-directory }}
       env:
         ACTION_PATH: ${{ github.action_path }}
-      run: node "$ACTION_PATH/restore-catalog.mjs" restore "$RUNNER_TEMP/expo-catalog-specifiers.json"
+      run: node "$ACTION_PATH/reconcile-specifiers.mjs" reconcile "$RUNNER_TEMP/expo-specifiers.json"
       shell: bash
 
     - name: Refresh Lockfile
-      if: steps.catalog.outputs.restored == 'true'
+      if: steps.reconcile.outputs.changed == 'true'
       working-directory: ${{ inputs.working-directory }}
       env:
         CI: false # pnpm enables frozen-lockfile when CI=true
       run: pnpm install --no-frozen-lockfile
+      shell: bash
+
+    # Expo resolves new versions into a lockfile that still holds the old ones
+    # for other packages, so the same native module can end up installed twice
+    # (expo-doctor fails on that). Only when the upgrade changed something, so
+    # a clean run does not rewrite the lockfile.
+    - name: Deduplicate Dependencies
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CI: false # pnpm enables frozen-lockfile when CI=true
+      run: |
+        if [ -n "$(git status --porcelain)" ]; then
+          pnpm dedupe
+        fi
       shell: bash
 
     - name: Commit Expo Dependency Updates
