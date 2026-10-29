@@ -1,3 +1,17 @@
+## 7.6.0 (2026-10-29)
+
+
+- feat: publish JS-only Expo changes as OTA updates instead of store builds (#117)
+- Add an Expo Fingerprint action and job. For each platform it compares the
+spoke's native fingerprint with the one recorded for the last native build
+and chooses a native build (changed, missing, unreadable, forced) or an OTA
+update (unchanged). Add an Update job that runs the spoke's make update on
+Ubuntu, attach mobile-fingerprint-* and mobile-ota-* assets in Release, and
+let Detect count mobile-ota-* records as handled. The Summary gains OTA
+rows, an update-failed stage and an OTA-only headline. Spokes without the
+fingerprint and update targets, or with ota: false, keep building natively.
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
 ## 7.5.0 (2026-10-28)
 
 
