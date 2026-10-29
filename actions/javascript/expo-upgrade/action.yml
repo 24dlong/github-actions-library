@@ -67,11 +67,37 @@ runs:
       run: make registry-auth
       shell: bash
 
+    # expo install --fix does not understand pnpm catalogs: it replaces a
+    # catalog: specifier with a literal version and leaves the catalog stale.
+    # Record the specifiers now so they can be put back afterwards.
+    - name: Record Catalog Specifiers
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: node "$ACTION_PATH/restore-catalog.mjs" snapshot "$RUNNER_TEMP/expo-catalog-specifiers.json"
+      shell: bash
+
     - name: Upgrade Expo Dependencies
       working-directory: ${{ inputs.working-directory }}
       env:
         CI: false # pnpm enables frozen-lockfile when CI=true
       run: pnpm exec expo install --fix
+      shell: bash
+
+    - name: Restore Catalog Specifiers
+      id: catalog
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: node "$ACTION_PATH/restore-catalog.mjs" restore "$RUNNER_TEMP/expo-catalog-specifiers.json"
+      shell: bash
+
+    - name: Refresh Lockfile
+      if: steps.catalog.outputs.restored == 'true'
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CI: false # pnpm enables frozen-lockfile when CI=true
+      run: pnpm install --no-frozen-lockfile
       shell: bash
 
     - name: Commit Expo Dependency Updates
