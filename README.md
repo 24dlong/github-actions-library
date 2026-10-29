@@ -286,6 +286,10 @@ Step logic lives in the composite actions the workflows call.
   (Publish Image to ECR, with CodeArtifact auth), then opens an `image_tag` bump pull
   request in the infra repository (Terraform tfvars Bump Pull Request). It takes the
   released `version` as an input and contains nothing JavaScript-specific.
+- `actions/application/detect`: decides whether a released version needs its image
+  published. Publishes only when a path in `paths` changed between the release tag
+  (`v<version>`) and the previous `v*` tag. Writes the decision and the changed files to
+  the job summary.
 
 Both workflows read these caller repository (or GitHub Environment) variables:
 
@@ -297,8 +301,14 @@ Both workflows read these caller repository (or GitHub Environment) variables:
 
 #### JavaScript Application Publish
 The `release` job runs JavaScript Publish (quality gate, then `make publish`). If that cut
-a new version, the `publish` job runs `actions/application/publish` on an arm64 runner in
-the `production` GitHub Environment, tagging the image with the version (no leading `v`).
+a new version, the `detect` job (`actions/application/detect`) checks whether any of the
+`paths` input changed since the previous `v*` tag. If so, the `publish` job runs
+`actions/application/publish` on an arm64 runner in the `production` GitHub Environment,
+tagging the image with the version (no leading `v`). Without `paths`, every release publishes.
+This keeps a monorepo's mobile-only release from rebuilding the web image. Detect compares
+tags, not published images: after a failed publish, re-run the job or set `force`. With a
+caller job named `Publish`, the checks are `Publish / Release`, `Publish / Detect` and
+`Publish / Publish`.
 A different language needs its own variant that releases through its own workflow, because
 a workflow path can't be chosen by an input.
 
@@ -324,6 +334,11 @@ jobs:
       dockerfile: apps/web/Dockerfile
       build-args: | # optional, extra build args
         SENTRY_DSN=${{ vars.SENTRY_DSN }}
+      paths: | # optional, publish only when one of these changed
+        apps/web
+        packages
+        pnpm-lock.yaml
+      force: false # optional, publish regardless of paths
       # context, platform, runs-on and environment are optional
     secrets:
       github-app-private-key: ${{ secrets.GH_WORKFLOWS_APP_PRIVATE_KEY }}

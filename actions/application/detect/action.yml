@@ -1,0 +1,112 @@
+name: Application Detect
+description: >-
+  Decides whether a released version needs its container image published.
+  Compares the release tag (v<version>) with the previous v* tag and publishes
+  only when a path in `paths` changed between them, so a release that touched
+  nothing the image is built from (for example a mobile-only change in a
+  monorepo) skips the image build and the infra bump. Compares tags, not
+  published images: after a failed publish, re-run it or use `force`.
+  Checks out the repository itself (full history), so run it as its own job.
+
+inputs:
+  version:
+    description: Released version without the leading v.
+    required: true
+  paths:
+    description: >-
+      Newline-separated git pathspecs the image is built from (for example
+      "apps/web"). Empty means always publish.
+    required: false
+    default: ""
+  force:
+    description: Publish regardless of changed paths.
+    required: false
+    default: "false"
+
+outputs:
+  publish:
+    description: "'true' if the image should be published, otherwise 'false'."
+    value: ${{ steps.decide.outputs.publish }}
+  reason:
+    description: One-line explanation of the decision.
+    value: ${{ steps.decide.outputs.reason }}
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout Code
+      uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+
+    - name: Decide
+      id: decide
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_PATHS: ${{ inputs.paths }}
+        INPUT_FORCE: ${{ inputs.force }}
+      run: |
+        set -euo pipefail
+
+        publish=false
+        reason=""
+        previous=""
+        changed=""
+        version="${INPUT_VERSION#v}"
+
+        paths=()
+        while IFS= read -r line; do
+          if [[ -n "${line//[[:space:]]/}" ]]; then
+            paths+=("${line}")
+          fi
+        done <<< "${INPUT_PATHS}"
+
+        if [[ -z "${version}" ]]; then
+          echo "version is required" >&2
+          exit 1
+        elif [[ "${INPUT_FORCE}" == "true" ]]; then
+          publish=true
+          reason="Forced"
+        elif (( ${#paths[@]} == 0 )); then
+          publish=true
+          reason="No paths to compare, always publish"
+        elif ! git rev-parse --verify --quiet "refs/tags/v${version}" > /dev/null; then
+          publish=true
+          reason="Tag v${version} not found, cannot compare"
+        else
+          previous="$(git describe --tags --abbrev=0 --match 'v*' "v${version}^" 2> /dev/null || true)"
+          if [[ -z "${previous}" ]]; then
+            publish=true
+            reason="No previous v* tag, first release"
+          else
+            changed="$(git diff --name-only "${previous}" "v${version}" -- "${paths[@]}")"
+            if [[ -n "${changed}" ]]; then
+              publish=true
+              reason="Image paths changed since ${previous}"
+            else
+              reason="No image paths changed since ${previous}"
+            fi
+          fi
+        fi
+
+        {
+          echo "publish=${publish}"
+          echo "reason=${reason}"
+        } >> "${GITHUB_OUTPUT}"
+
+        {
+          echo "## Application detect"
+          echo
+          echo "- Version: \`${version}\`"
+          echo "- Publish: \`${publish}\`"
+          echo "- Reason: ${reason}"
+          if [[ -n "${changed}" ]]; then
+            echo
+            echo "Changed files (first 20):"
+            echo
+            echo '```'
+            echo "${changed}" | sed -n 1,20p
+            echo '```'
+          fi
+        } >> "${GITHUB_STEP_SUMMARY}"
+      shell: bash
