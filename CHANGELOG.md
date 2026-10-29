@@ -1,3 +1,12 @@
+## 7.9.0 (2026-10-29)
+
+
+- feat: skip the image publish when no image paths changed (#121)
+- Adds actions/application/detect and a Detect job, with paths and force
+inputs, to javascript-application-publish.yml. Empty paths keeps the old
+behaviour.
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
 ## 7.8.2 (2026-10-29)
 
 
