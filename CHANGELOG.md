@@ -1,3 +1,16 @@
+## 7.8.0 (2026-10-29)
+
+
+- feat: keep pnpm catalog specifiers when expo-upgrade runs expo install --fix (#119)
+- expo install --fix does not understand catalogs. It runs pnpm add, which
+replaces a catalog: specifier in package.json with a literal version and
+leaves the catalog in pnpm-workspace.yaml stale, so other workspace
+packages stay on the old version.
+- Record the catalog: specifiers before the fix. Afterwards put them back,
+write the new version into the matching catalog (default or named) and
+refresh the lockfile. No-op for projects without catalogs.
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
 ## 7.7.0 (2026-10-29)
 
 
