@@ -1,3 +1,85 @@
+## 7.6.0 (2026-10-29)
+
+
+- feat: publish JS-only Expo changes as OTA updates instead of store builds (#117)
+- Add an Expo Fingerprint action and job. For each platform it compares the
+spoke's native fingerprint with the one recorded for the last native build
+and chooses a native build (changed, missing, unreadable, forced) or an OTA
+update (unchanged). Add an Update job that runs the spoke's make update on
+Ubuntu, attach mobile-fingerprint-* and mobile-ota-* assets in Release, and
+let Detect count mobile-ota-* records as handled. The Summary gains OTA
+rows, an update-failed stage and an OTA-only headline. Spokes without the
+fingerprint and update targets, or with ota: false, keep building natively.
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
+## 7.5.0 (2026-10-28)
+
+
+- feat: add a failure banner with recovery steps to the Expo publish summary (#116)
+- Summary now opens with a status banner. A failed build, a submission that
+could not be queued, a store rejection or timeout, or failed release assets
+become cautions with a stage-specific recovery list and ::error annotations,
+so a red run is understandable without reading job logs. A failed metadata
+push is a warning. Summary also runs when Detect fails.
+- Removes the Collect/Upload iOS gym logs steps from the build action: the
+~/Library/Logs/gym directory never exists in eas local builds, so they never
+uploaded anything.
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
+## 7.4.2 (2026-10-27)
+
+
+- fix: read the submission status line instead of make's exit code (#115)
+- make reports any failed recipe as exit 2, so the spoke's exit 3 for "still
+running" reached the Submissions job as a tool error and failed it after five
+polls (run 40574876645) although both submissions finished normally. The poll
+now classifies the "status=<STATUS>" line the spoke prints and keeps the
+fail-fast on polls that return no status.
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
+## 7.4.1 (2026-10-27)
+
+
+- fix: repair Expo submit follow-ups found in the first 7.4.0 run (#114)
+- - Stop passing the release notes to the submit step. EAS rejected
+  --what-to-test ("changelog" is Enterprise plan only), which failed iOS submit.
+- Submissions now installs dependencies (setup, not setup-no-install): eas
+  loads the app config and its plugins even to read a submission, so every poll
+  failed. The poll now prints eas's full output on tool errors and stops after
+  five in a row instead of retrying until the deadline.
+- Release passes --repo to gh release upload; the job has no checkout.
+- Android: drop the unnecessary free-disk step (the root disk had 88 GB free).
+  The build died under /tmp with "Disk quota exceeded", and building in
+  /mnt/eas-build is what fixed it. Report df for /tmp as well.
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
+## 7.4.0 (2026-10-27)
+
+
+- feat: queue Expo submissions without waiting, check them on Ubuntu, fix Android disk (#113)
+- * fix: keep Android Expo builds from filling the runner disk
+- The Android build died with "Disk quota exceeded" on a standard runner
+(Gradle lint, CMake and the lockfile writes). Free preinstalled toolchains the
+build does not use, move the eas build working directory to /mnt, and print df
+before and after so the next failure shows numbers.
+- Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+- * feat: queue Expo submissions without waiting and check them on Ubuntu
+- eas submit waited for the store on the macOS runner and hit the job timeout
+(48 minutes of 10x minutes). The submit step now only queues the submission and
+reports its URL and id. A new Submissions job polls the spoke's submit-status
+target on Ubuntu and fails the run if a store rejects the build. The summary
+shows queued, delivered, rejected or timed out with a link, and Metadata now
+runs only after Submissions passed.
+- iOS submissions also pass the release notes to the spoke as
+RELEASE_NOTES_FILE, which the app turns into TestFlight "What to Test".
+- Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+- * fix: allow Submissions to wait up to 85 minutes
+- An observed iOS submission took 55 minutes on the EAS queue, longer than the
+55-minute poll deadline planned for it.
+- Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+- ---------
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
 ## 7.3.0 (2026-10-26)
 
 

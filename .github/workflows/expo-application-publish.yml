@@ -1,14 +1,20 @@
 # Reusable publish workflow for an Expo application (local EAS builds, then
 # store submit). Not run in this repository: on.workflow_call only.
 #
-# Jobs: Detect (builds only when `paths` changed since the last release whose
-# mobile builds were attached, or when forced), Notes (store-facing release
-# notes), Android on ubuntu-26.04, iOS on macos-26 with Xcode 26.4.1, then
-# Release (attaches the builds and notes to the GitHub release), Metadata
-# (optional App Store listing push) and Summary.
+# Jobs: Detect (acts only when `paths` changed since the last release whose
+# mobile work was attached, or when forced), Fingerprint (per platform: native
+# fingerprint changed, so build; unchanged, so ship an OTA update), Notes
+# (store-facing release notes), Android on ubuntu-26.04, iOS on macos-26 with
+# Xcode 26.4.1, Update (publishes the OTA update on Ubuntu), then Submissions
+# (waits on Ubuntu for the stores to accept the queued submissions; the build
+# jobs never wait), Release (attaches the builds, fingerprints, update records
+# and notes to the GitHub release), Metadata (optional App Store listing push
+# after Submissions passed) and Summary (a status banner with recovery steps,
+# then the per-platform table and the store checklist).
 # With a caller job named Mobile, the checks are Mobile / Detect, Mobile /
-# Notes, Mobile / Android, Mobile / iOS, Mobile / Release, Mobile / Metadata
-# and Mobile / Summary.
+# Fingerprint, Mobile / Notes, Mobile / Android, Mobile / iOS, Mobile / Update,
+# Mobile / Submissions, Mobile / Release, Mobile / Metadata and Mobile /
+# Summary.
 #
 # Reads these caller repository (or GitHub Environment) variables, all
 # CodeArtifact: AWS_CODE_ARTIFACT_ACCOUNT_ID, AWS_REGION, AWS_ROLE_TO_ASSUME,
@@ -43,19 +49,29 @@ on:
         type: string
       paths:
         description: >-
-          Newline-separated git pathspecs that can change the native build
-          (for example "apps/mobile"). Detect builds only when one changed
-          between the previous v* tag and v<version>. Empty always builds.
+          Newline-separated git pathspecs that can change the app (for example
+          "apps/mobile"). Detect acts only when one changed since the last
+          release with mobile assets. Empty always acts. Fingerprint then
+          decides between a build and an OTA update.
         required: false
         type: string
         default: ""
       force:
-        description: Build regardless of changed paths.
+        description: Build every platform natively regardless of changed paths and fingerprints.
         required: false
         type: boolean
         default: false
+      ota:
+        description: >-
+          Publish an OTA update (the spoke's `make update`) instead of a store
+          build for a platform whose native fingerprint is unchanged since its
+          last build. Needs the spoke's `fingerprint` and `update` targets. When
+          false, or when the spoke lacks them, every change builds natively.
+        required: false
+        type: boolean
+        default: true
       platforms:
-        description: Comma-separated platforms to build (ios, android, or both).
+        description: Comma-separated platforms to publish (ios, android, or both).
         required: false
         type: string
         default: ios,android
@@ -71,8 +87,9 @@ on:
         default: true
       release-assets:
         description: >-
-          Attach the builds and release notes to the GitHub release v<version>.
-          Detect uses these assets to tell which release was last built.
+          Attach the builds, native fingerprints, OTA update records and release
+          notes to the GitHub release v<version>. Detect and Fingerprint use
+          these assets to tell what was last published.
         required: false
         type: boolean
         default: true
@@ -119,10 +136,47 @@ jobs:
           force: ${{ inputs.force }}
           platforms: ${{ inputs.platforms }}
 
-  notes:
-    name: Notes
+  # Per platform: build natively (fingerprint changed, unknown or forced) or
+  # ship an OTA update (unchanged). Builds are the fallback everywhere below:
+  # if this job fails, every requested platform still builds.
+  fingerprint:
+    name: Fingerprint
     needs: detect
     if: needs.detect.outputs.build == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      build-platforms: ${{ steps.decide.outputs.build-platforms }}
+      update-platforms: ${{ steps.decide.outputs.update-platforms }}
+      fingerprints: ${{ steps.decide.outputs.fingerprints }}
+      reason: ${{ steps.decide.outputs.reason }}
+    steps:
+      - id: decide
+        uses: 24dlong/github-actions-library/actions/javascript/expo/fingerprint@v7
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          version: ${{ needs.detect.outputs.version }}
+          platforms: ${{ inputs.platforms }}
+          force: ${{ inputs.force }}
+          ota: ${{ inputs.ota }}
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
+
+  notes:
+    name: Notes
+    needs: [detect, fingerprint]
+    # Store-facing notes are only for builds.
+    if: >-
+      always() && !cancelled() && needs.detect.outputs.build == 'true'
+      && (needs.fingerprint.result != 'success' || needs.fingerprint.outputs.build-platforms != '')
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
@@ -166,8 +220,11 @@ jobs:
 
   android:
     name: Android
-    needs: detect
-    if: needs.detect.outputs.build == 'true' && contains(inputs.platforms, 'android')
+    needs: [detect, fingerprint]
+    if: >-
+      always() && !cancelled() && needs.detect.outputs.build == 'true'
+      && contains(inputs.platforms, 'android')
+      && (needs.fingerprint.result != 'success' || contains(needs.fingerprint.outputs.build-platforms, 'android'))
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     environment: ${{ inputs.environment }}
@@ -183,6 +240,8 @@ jobs:
       build-number: ${{ steps.build.outputs.build-number }}
       build-result: ${{ steps.build.outcome }}
       submit-result: ${{ steps.submit.outcome }}
+      submission-url: ${{ steps.submit.outputs.submission-url }}
+      submission-id: ${{ steps.submit.outputs.submission-id }}
     steps:
       - id: build
         uses: 24dlong/github-actions-library/actions/javascript/expo/build@v7
@@ -212,8 +271,11 @@ jobs:
 
   ios:
     name: iOS
-    needs: detect
-    if: needs.detect.outputs.build == 'true' && contains(inputs.platforms, 'ios')
+    needs: [detect, fingerprint]
+    if: >-
+      always() && !cancelled() && needs.detect.outputs.build == 'true'
+      && contains(inputs.platforms, 'ios')
+      && (needs.fingerprint.result != 'success' || contains(needs.fingerprint.outputs.build-platforms, 'ios'))
     runs-on: macos-26
     timeout-minutes: 60
     environment: ${{ inputs.environment }}
@@ -229,6 +291,8 @@ jobs:
       build-number: ${{ steps.build.outputs.build-number }}
       build-result: ${{ steps.build.outcome }}
       submit-result: ${{ steps.submit.outcome }}
+      submission-url: ${{ steps.submit.outputs.submission-url }}
+      submission-id: ${{ steps.submit.outputs.submission-id }}
     steps:
       - id: build
         uses: 24dlong/github-actions-library/actions/javascript/expo/build@v7
@@ -256,13 +320,82 @@ jobs:
           artifact: ${{ steps.build.outputs.artifact-path }}
           expo-token: ${{ secrets.expo-token }}
 
+  # OTA update for the platforms whose native fingerprint is unchanged. Runs on
+  # Ubuntu next to the builds, with no store involved: installed builds with
+  # the same fingerprint download it on their next launch.
+  update:
+    name: Update
+    needs: [detect, fingerprint]
+    if: >-
+      always() && !cancelled() && needs.fingerprint.result == 'success'
+      && needs.fingerprint.outputs.update-platforms != ''
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+      actions: write # artifact upload
+    outputs:
+      result: ${{ steps.publish.outcome }}
+      artifact-name: ${{ steps.upload.outputs.artifact-id && format('mobile-ota-{0}', needs.detect.outputs.version) || '' }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Setup JavaScript
+        uses: 24dlong/github-actions-library/actions/javascript/setup@v7
+        with:
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
+
+      # The spoke owns the eas call, the channel and the Sentry source map
+      # upload. APP_VERSION is the released version; it is not part of the
+      # native fingerprint, so the update still matches the installed builds.
+      - name: Publish OTA update
+        id: publish
+        env:
+          APP_VERSION: ${{ needs.detect.outputs.version }}
+          EXPO_TOKEN: ${{ secrets.expo-token }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.sentry-auth-token }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          UPDATE_PLATFORMS: ${{ needs.fingerprint.outputs.update-platforms }}
+          FINGERPRINTS: ${{ needs.fingerprint.outputs.fingerprints }}
+        run: |
+          set -euo pipefail
+          IFS=',' read -r -a list <<< "${UPDATE_PLATFORMS}"
+          if (( ${#list[@]} > 1 )); then target=all; else target="${list[0]}"; fi
+          make -C "${WORKING_DIRECTORY}" update PLATFORM="${target}" MESSAGE="v${APP_VERSION}"
+
+          # One record per platform. Release attaches them as
+          # mobile-ota-<platform>-<version>.json, which Detect counts as handled.
+          fingerprints="${FINGERPRINTS:-}"
+          [[ -n "${fingerprints}" ]] || fingerprints='{}'
+          mkdir -p "${RUNNER_TEMP}/ota"
+          for platform in "${list[@]}"; do
+            jq -n               --arg platform "${platform}"               --arg version "${APP_VERSION}"               --arg fingerprint "$(jq -r --arg p "${platform}" '.[$p] // empty' <<< "${fingerprints}")"               --arg run "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"               --arg publishedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)"               '{platform: $platform, version: $version, fingerprint: $fingerprint, run: $run, publishedAt: $publishedAt}'               > "${RUNNER_TEMP}/ota/mobile-ota-${platform}-${APP_VERSION}.json"
+          done
+        shell: bash
+
+      - name: Upload update records
+        id: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: mobile-ota-${{ needs.detect.outputs.version }}
+          path: ${{ runner.temp }}/ota/*.json
+          if-no-files-found: error
+
   release:
     name: Release
-    needs: [detect, notes, android, ios]
+    needs: [detect, fingerprint, notes, android, ios, update]
     if: >-
       always() && !cancelled() && inputs.release-assets
       && needs.detect.outputs.build == 'true'
-      && (needs.android.outputs.build-result == 'success' || needs.ios.outputs.build-result == 'success')
+      && (needs.android.outputs.build-result == 'success' || needs.ios.outputs.build-result == 'success' || needs.update.outputs.result == 'success')
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
@@ -292,15 +425,26 @@ jobs:
           name: ${{ needs.notes.outputs.artifact-name }}
           path: ${{ runner.temp }}/assets/notes
 
+      - name: Download OTA update records
+        if: needs.update.outputs.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.update.outputs.artifact-name }}
+          path: ${{ runner.temp }}/assets/ota
+
       - name: Attach to release
         id: upload
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.detect.outputs.version }}
+          FINGERPRINTS: ${{ needs.fingerprint.outputs.fingerprints }}
         run: |
           set -euo pipefail
-          # Detect keys on the mobile-<platform>- prefix, so keep it. Name the
-          # file like its workflow artifact: mobile-<platform>-<version>.<ext>.
+          # Detect keys on the mobile-<platform>- and mobile-ota-<platform>-
+          # prefixes, so keep them. Name each build like its workflow artifact:
+          # mobile-<platform>-<version>.<ext>.
+          fingerprints="${FINGERPRINTS:-}"
+          [[ -n "${fingerprints}" ]] || fingerprints='{}'
           files=()
           for platform in android ios; do
             dir="${RUNNER_TEMP}/assets/${platform}"
@@ -310,22 +454,155 @@ jobs:
               mv "${file}" "${target}"
               files+=("${target}")
             done
+            # The fingerprint of a native build is the baseline Fingerprint
+            # compares the next release against. Not named mobile-<platform>-,
+            # so Detect does not mistake it for a build.
+            fingerprint="$(jq -r --arg p "${platform}" '.[$p] // empty' <<< "${fingerprints}")"
+            if [[ -n "${fingerprint}" ]]; then
+              target="${RUNNER_TEMP}/assets/mobile-fingerprint-${platform}-${VERSION}.json"
+              jq -n --arg platform "${platform}" --arg version "${VERSION}" --arg fingerprint "${fingerprint}" \
+                '{platform: $platform, version: $version, fingerprint: $fingerprint}' > "${target}"
+              files+=("${target}")
+            fi
           done
+          if [[ -d "${RUNNER_TEMP}/assets/ota" ]]; then
+            for file in "${RUNNER_TEMP}/assets/ota"/*.json; do
+              files+=("${file}")
+            done
+          fi
           notes="${RUNNER_TEMP}/assets/notes/release-notes.md"
           if [[ -f "${notes}" ]]; then
             mv "${notes}" "${RUNNER_TEMP}/assets/mobile-release-notes-${VERSION}.md"
             files+=("${RUNNER_TEMP}/assets/mobile-release-notes-${VERSION}.md")
           fi
           # Re-runs and forced builds replace the previous build of this version.
-          gh release upload "v${VERSION}" "${files[@]}" --clobber
+          # No checkout in this job, so gh cannot infer the repository from git.
+          gh release upload "v${VERSION}" "${files[@]}" --repo "${GITHUB_REPOSITORY}" --clobber
           echo "url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}" >> "${GITHUB_OUTPUT}"
+
+  submissions:
+    name: Submissions
+    needs: [detect, android, ios]
+    # eas submit only queues the submission (it does not wait, so a macOS
+    # runner is not held for the store). This job waits on cheap Ubuntu time and
+    # fails the run if Apple or Google rejects the build.
+    if: >-
+      always() && !cancelled() && inputs.submit
+      && (needs.android.outputs.submission-id != '' || needs.ios.outputs.submission-id != '')
+    runs-on: ubuntu-26.04
+    # The v1.4.0 iOS submission took 55 minutes to finish on EAS's free-plan
+    # queue, so leave generous room.
+    timeout-minutes: 90
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      android-status: ${{ steps.wait.outputs.android-status }}
+      ios-status: ${{ steps.wait.outputs.ios-status }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      # eas loads the app config (and its plugins) even to read a submission,
+      # so the dependencies must be installed.
+      - name: Setup JavaScript
+        uses: 24dlong/github-actions-library/actions/javascript/setup@v7
+        with:
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
+
+      - name: Wait for submissions
+        id: wait
+        env:
+          EXPO_TOKEN: ${{ secrets.expo-token }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          ANDROID_ID: ${{ needs.android.outputs.submission-id }}
+          ANDROID_URL: ${{ needs.android.outputs.submission-url }}
+          IOS_ID: ${{ needs.ios.outputs.submission-id }}
+          IOS_URL: ${{ needs.ios.outputs.submission-url }}
+        run: |
+          set -euo pipefail
+          # The spoke owns the eas call. Without its submit-status target there
+          # is nothing to wait on; the submissions stay queued with EAS.
+          if ! make -C "${WORKING_DIRECTORY}" --dry-run submit-status > /dev/null 2>&1; then
+            echo "::notice::No submit-status target in ${WORKING_DIRECTORY}/Makefile, not waiting for submissions"
+            exit 0
+          fi
+
+          labels=()
+          ids=()
+          urls=()
+          if [[ -n "${ANDROID_ID}" ]]; then labels+=(android); ids+=("${ANDROID_ID}"); urls+=("${ANDROID_URL}"); fi
+          if [[ -n "${IOS_ID}" ]]; then labels+=(ios); ids+=("${IOS_ID}"); urls+=("${IOS_URL}"); fi
+
+          states=()
+          for i in "${!ids[@]}"; do states+=(pending); done
+          failed=0
+          tool_errors=0
+          deadline=$(( SECONDS + 85 * 60 ))
+          while :; do
+            waiting=0
+            for i in "${!ids[@]}"; do
+              [[ "${states[$i]}" == pending ]] || continue
+              # The answer is the "status=<STATUS>" line the target prints. Do not
+              # use its exit code: make reports any failed recipe as exit 2.
+              code=0
+              output="$(make -C "${WORKING_DIRECTORY}" --no-print-directory submit-status SUBMISSION_ID="${ids[$i]}" 2>&1)" || code=$?
+              status="$(sed -n 's/^status=//p' <<< "${output}" | tail -n 1)"
+              echo "${labels[$i]} (${urls[$i]}): ${status:-no status} [make exit ${code}]"
+              case "${status}" in
+                FINISHED) states[$i]=FINISHED; tool_errors=0 ;;
+                ERRORED|CANCELED) states[$i]=FAILED; failed=1; tool_errors=0 ;;
+                IN_PROGRESS|IN_QUEUE|AWAITING_BUILD) waiting=1; tool_errors=0 ;;
+                *)
+                  # No status from the store: show everything eas said, and give
+                  # up after a few in a row instead of retrying until the deadline.
+                  echo "${output}" >&2
+                  tool_errors=$(( tool_errors + 1 ))
+                  if (( tool_errors >= 5 )); then
+                    echo "::error::submit-status gave no status ${tool_errors} times in a row; see the output above"
+                    echo "${labels[$i]}-status=ERROR" >> "${GITHUB_OUTPUT}"
+                    exit 1
+                  fi
+                  waiting=1
+                  ;;
+              esac
+              echo "${labels[$i]}-status=${states[$i]}" >> "${GITHUB_OUTPUT}"
+            done
+            (( waiting )) || break
+            if (( SECONDS >= deadline )); then
+              echo "::error::Timed out waiting for the store to finish the submission(s)"
+              for i in "${!ids[@]}"; do
+                [[ "${states[$i]}" == pending ]] && echo "${labels[$i]}-status=TIMEOUT" >> "${GITHUB_OUTPUT}"
+              done
+              failed=1
+              break
+            fi
+            sleep 60
+          done
+          if (( failed )); then
+            for i in "${!ids[@]}"; do
+              if [[ "${states[$i]}" != FINISHED ]]; then
+                echo "::error::${labels[$i]} submission did not finish: ${urls[$i]}"
+              fi
+            done
+            exit 1
+          fi
 
   metadata:
     name: Metadata
-    needs: [detect, notes, ios]
+    # Runs after Submissions so no What's New is pushed for a build the store
+    # rejected.
+    needs: [detect, notes, ios, submissions]
     if: >-
       always() && !cancelled() && inputs.metadata
       && needs.ios.outputs.build-result == 'success'
+      && needs.submissions.result == 'success'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: ${{ inputs.environment }}
@@ -369,13 +646,32 @@ jobs:
           WORKING_DIRECTORY: ${{ inputs.working-directory }}
         run: |
           set -euo pipefail
+          # Fail fast on an invalid store config, before touching App Store Connect.
+          if make -C "${WORKING_DIRECTORY}" --dry-run metadata-lint > /dev/null 2>&1; then
+            make -C "${WORKING_DIRECTORY}" metadata-lint
+          fi
           make -C "${WORKING_DIRECTORY}" metadata \
             RELEASE_NOTES_FILE="${RUNNER_TEMP}/notes/release-notes.md"
 
   summary:
     name: Summary
-    needs: [detect, notes, android, ios, release, metadata]
-    if: always() && !cancelled() && needs.detect.outputs.build == 'true'
+    needs:
+      [
+        detect,
+        fingerprint,
+        notes,
+        android,
+        ios,
+        update,
+        submissions,
+        release,
+        metadata,
+      ]
+    # Also runs when Detect fails, so a broken change check still leaves a
+    # banner instead of an empty summary.
+    if: >-
+      always() && !cancelled()
+      && (needs.detect.outputs.build == 'true' || needs.detect.result == 'failure')
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
@@ -395,6 +691,17 @@ jobs:
       - name: Write summary
         env:
           WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          DETECT_RESULT: ${{ needs.detect.result }}
+          FINGERPRINT_RESULT: ${{ needs.fingerprint.result }}
+          FINGERPRINT_BUILD: ${{ needs.fingerprint.outputs.build-platforms }}
+          FINGERPRINT_UPDATE: ${{ needs.fingerprint.outputs.update-platforms }}
+          UPDATE_RESULT: ${{ needs.update.result }}
+          UPDATE_PUBLISH: ${{ needs.update.outputs.result }}
+          SUBMISSIONS_RESULT: ${{ needs.submissions.result }}
+          ANDROID_SUBMISSION_URL: ${{ needs.android.outputs.submission-url }}
+          ANDROID_DELIVERY: ${{ needs.submissions.outputs.android-status }}
+          IOS_SUBMISSION_URL: ${{ needs.ios.outputs.submission-url }}
+          IOS_DELIVERY: ${{ needs.submissions.outputs.ios-status }}
           RELEASE_URL: ${{ needs.release.outputs.url }}
           RELEASE_RESULT: ${{ needs.release.result }}
           METADATA_REQUESTED: ${{ inputs.metadata }}
@@ -425,9 +732,14 @@ jobs:
             esac
           }
           # Args: label, job result, build outcome, submit outcome, artifact
-          # name, artifact path, build number. Prints one table row.
+          # name, artifact path, build number, submission URL, delivery
+          # (FINISHED, FAILED, TIMEOUT or empty). Prints one table row. A
+          # successful submit step only means the submission is queued with EAS;
+          # Submissions reports whether the store accepted it.
           row() {
-            local label="$1" job="$2" build="$3" submit="$4" status
+            local label="$1" job="$2" build="$3" submit="$4" status delivery cell
+            local url="${8:-}"
+            local result="${9:-}"
             if [[ "${job}" == "skipped" ]]; then
               build="not requested"
               submit="n/a"
@@ -449,13 +761,181 @@ jobs:
             elif [[ "${submit}" == "disabled" ]]; then
               status="Build succeeded, submit disabled"
             elif [[ "${submit}" == "success" ]]; then
-              status="Build and submit succeeded"
+              case "${result}" in
+                FINISHED) delivery=delivered ;;
+                FAILED) delivery=rejected ;;
+                TIMEOUT) delivery="timed out" ;;
+                ERROR) delivery="status check failed" ;;
+                *) delivery=queued ;;
+              esac
+              submit="${delivery}"
+              status="Build succeeded, submission ${delivery}"
             else
               status="Build succeeded, submit $(past "${submit}")"
             fi
-            echo "| ${label} | ${status} | ${build} | ${submit} | \`${5:-n/a}\` | \`${6:-n/a}\` | ${7:-n/a} |"
+            cell="${submit}"
+            if [[ -n "${url}" ]]; then
+              cell="[${submit}](${url})"
+            fi
+            echo "| ${label} | ${status} | ${build} | ${cell} | \`${5:-n/a}\` | \`${6:-n/a}\` | ${7:-n/a} |"
           }
+          # Platforms Fingerprint chose an OTA update for. When Fingerprint did not
+          # succeed, no platform skipped its build for an update.
+          update_platforms=""
+          [[ "${FINGERPRINT_RESULT}" != "success" ]] || update_platforms="${FINGERPRINT_UPDATE}"
+          # False only when Fingerprint ran and chose OTA updates for everything.
+          native_builds=true
+          if [[ "${FINGERPRINT_RESULT}" == "success" && -z "${FINGERPRINT_BUILD}" ]]; then
+            native_builds=false
+          fi
+          # Args: platform key (android, ios). True when it ships as an OTA update.
+          is_update() { [[ ",${update_platforms}," == *",$1,"* ]]; }
+          # Args: label, platform key. Prints the table row for an OTA platform.
+          ota_row() {
+            local status
+            case "${UPDATE_PUBLISH:-${UPDATE_RESULT}}" in
+              success) status="OTA update published" ;;
+              *) status="OTA update $(past "${UPDATE_PUBLISH:-${UPDATE_RESULT}}")" ;;
+            esac
+            echo "| $1 | ${status} | not needed (native unchanged) | n/a | n/a | n/a | n/a |"
+          }
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          problems=()
+          warnings=()
+          kinds=" "
+          # Args: kind (selects the recovery hint), label, stage, message. Adds
+          # the problem to the banner and annotates the run, so a failure is
+          # visible on the run page without opening this summary.
+          problem() {
+            problems+=("${2} ${3}: ${4}")
+            [[ "${kinds}" == *" $1 "* ]] || kinds+="$1 "
+            echo "::error title=Mobile ${2} ${3} failed::${4}"
+          }
+          # Args: label, stage, message. Non-blocking: reported, never fails the run.
+          warn() {
+            warnings+=("${1} ${2}: ${3}")
+            echo "::warning title=Mobile ${1} ${2}::${3}"
+          }
+          # Args: label, job result, build outcome, submit outcome, delivery
+          # (see row), submission URL. Records the first problem on a platform:
+          # build, then queueing the submission, then the store's answer.
+          check() {
+            local label="$1" job="$2" build="$3" submit="$4" delivery="$5" url="${6:-}"
+            local see=""
+            [[ "${job}" == "skipped" ]] && return 0
+            [[ -z "${url}" ]] || see=" See ${url}."
+            build="${build:-${job}}"
+            if [[ "${build}" != "success" ]]; then
+              problem build "${label}" build "the build $(past "${build}"). Open the ${label} job for the cause."
+              return 0
+            fi
+            [[ "${SUBMIT}" == "true" ]] || return 0
+            submit="${submit:-${job}}"
+            if [[ "${submit}" != "success" ]]; then
+              problem queue "${label}" submit "the build succeeded but the submission could not be queued (submit $(past "${submit}")). Open the ${label} job for the cause."
+              return 0
+            fi
+            case "${delivery}" in
+              FINISHED) ;;
+              FAILED) problem store "${label}" submission "the store rejected or cancelled the submission.${see}" ;;
+              TIMEOUT) problem store "${label}" submission "the submission had not finished when the wait ended.${see}" ;;
+              ERROR) problem store "${label}" submission "the submission status could not be read.${see}" ;;
+              "")
+                # Submissions can fail before it reports a platform's status.
+                case "${SUBMISSIONS_RESULT}" in
+                  failure | cancelled) problem store "${label}" submission "the store result is unknown because Submissions $(past "${SUBMISSIONS_RESULT}").${see}" ;;
+                esac
+                ;;
+              *) problem store "${label}" submission "the submission ended in an unexpected state (${delivery}).${see}" ;;
+            esac
+          }
+          # Prints the recovery hints for the kinds of problem found.
+          recovery() {
+            echo "#### Recover"
+            echo
+            if [[ "${kinds}" == *" detect "* ]]; then
+              echo "- **Change check failed**: open the Detect job, fix the cause, then re-run it, or dispatch Merge Workflow with \`force-mobile\`."
+            fi
+            if [[ "${kinds}" == *" build "* ]]; then
+              echo "- **Build failed**: fix the cause, then use *Re-run failed jobs* on [this run](${run_url}). It keeps version \`${VERSION}\`, takes a new build number, and builds only the failed platform. Avoid *Re-run all jobs*: it rebuilds and resubmits the platform that already succeeded. A run that never reaches the stores also leaves no release assets, so the next release rebuilds these changes by itself."
+            fi
+            if [[ "${kinds}" == *" queue "* ]]; then
+              echo "- **Submission not queued**: the build is the workflow artifact \`mobile-<platform>-${VERSION}\` on [this run](${run_url}#artifacts). Fix the cause (usually a store credential in EAS), then re-run the failed job, or submit that artifact by hand: \`make -C ${WORKING_DIRECTORY} submit PLATFORM=<ios|android> ARTIFACT=<path>\`."
+            fi
+            if [[ "${kinds}" == *" store "* ]]; then
+              echo "- **Store did not accept the build**: the EAS submission link above gives the store's reason. Fix it in App Store Connect or Play Console, then submit the same artifact again: \`make -C ${WORKING_DIRECTORY} submit PLATFORM=<ios|android> ARTIFACT=<path>\` (the artifact is on [this run](${run_url}#artifacts)). If the reason is a duplicate or too-low build number, rebuild instead: dispatch Merge Workflow with \`force-mobile\`."
+            fi
+            if [[ "${kinds}" == *" fingerprint "* ]]; then
+              echo "- **Fingerprint check failed**: every platform was built natively instead, which is the safe fallback. Open the Fingerprint job for the cause."
+            fi
+            if [[ "${kinds}" == *" update "* ]]; then
+              echo "- **OTA update failed**: nothing reached users. Fix the cause, then re-run the Update job; publishing the same update twice is harmless. Or run \`make -C ${WORKING_DIRECTORY} update PLATFORM=<ios|android|all> MESSAGE=v${VERSION}\` from a checkout of the release. No update record is attached on failure, so the next release repeats the change by itself."
+            fi
+            if [[ "${kinds}" == *" assets "* ]]; then
+              echo "- **Release assets not attached**: re-run the Release job. Uploads use \`--clobber\`, so repeating them is safe. Until they are attached, Detect treats the release as not built."
+            fi
+            if [[ "${kinds}" == *" metadata "* ]]; then
+              echo "- **Metadata push failed**: the builds are unaffected. Re-run the Metadata job, or run \`make -C ${WORKING_DIRECTORY} metadata\` locally."
+            fi
+          }
+          # The headline is the first thing in the summary.
+          banner() {
+            local item
+            if (( ${#problems[@]} )); then
+              echo "> [!CAUTION]"
+              echo "> **Mobile publish${VERSION:+ of \`${VERSION}\`} needs attention.** [Run](${run_url})"
+              for item in "${problems[@]}"; do echo "> - ${item}"; done
+            elif [[ "${native_builds}" == "false" ]]; then
+              echo "> [!NOTE]"
+              echo "> **OTA update of \`${VERSION}\` published for ${update_platforms//,/, }.** The native fingerprint is unchanged, so no store build was needed. Installed builds apply it on their second launch."
+            elif [[ "${SUBMIT}" == "true" ]]; then
+              echo "> [!NOTE]"
+              echo "> **Mobile publish of \`${VERSION}\` succeeded.** Builds are submitted; moving them to store review is manual (checklist below).${update_platforms:+ OTA update published for ${update_platforms//,/, }.}"
+            else
+              echo "> [!NOTE]"
+              echo "> **Mobile builds of \`${VERSION}\` succeeded.** Submit was disabled for this run.${update_platforms:+ OTA update published for ${update_platforms//,/, }.}"
+            fi
+            if (( ${#warnings[@]} )); then
+              echo ">"
+              for item in "${warnings[@]}"; do echo "> - Warning: ${item}"; done
+            fi
+            if (( ${#problems[@]} + ${#warnings[@]} )); then
+              echo
+              recovery
+            fi
+            echo
+          }
+
+          if [[ "${DETECT_RESULT}" == "failure" ]]; then
+            problem detect Change check "Detect failed, so no mobile build was attempted for this release."
+            banner >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "${FINGERPRINT_RESULT}" == "failure" || "${FINGERPRINT_RESULT}" == "cancelled" ]]; then
+            kinds+="fingerprint "
+            warn Fingerprint check "the native fingerprint check $(past "${FINGERPRINT_RESULT}"), so every platform was built natively."
+          fi
+          if [[ -n "${update_platforms}" ]]; then
+            case "${UPDATE_PUBLISH:-${UPDATE_RESULT}}" in
+              success) ;;
+              *) problem update OTA update "publishing the OTA update for ${update_platforms//,/, } $(past "${UPDATE_PUBLISH:-${UPDATE_RESULT}}"). Open the Update job for the cause." ;;
+            esac
+          fi
+          check Android "${ANDROID_RESULT}" "${ANDROID_BUILD}" "${ANDROID_SUBMIT}" \
+            "${ANDROID_DELIVERY}" "${ANDROID_SUBMISSION_URL}"
+          check iOS "${IOS_RESULT}" "${IOS_BUILD}" "${IOS_SUBMIT}" \
+            "${IOS_DELIVERY}" "${IOS_SUBMISSION_URL}"
+          case "${RELEASE_RESULT}" in
+            failure | cancelled) problem assets Release assets "attaching the builds to v${VERSION} $(past "${RELEASE_RESULT}"). Open the Release job for the cause." ;;
+          esac
+          if [[ "${METADATA_REQUESTED}" == "true" && "${METADATA_RESULT}" != "skipped" && "${METADATA_PUSH}" != "success" ]]; then
+            kinds+="metadata "
+            warn "App Store" metadata "the listing push did not succeed. See the Metadata job."
+          fi
+
           {
+            banner
             echo "## Expo publish"
             echo
             echo "- Version: \`${VERSION}\`"
@@ -464,10 +944,20 @@ jobs:
             echo
             echo "| Platform | Status | Build | Submit | Artifact | Path | Build number |"
             echo "| --- | --- | --- | --- | --- | --- | --- |"
-            row Android "${ANDROID_RESULT}" "${ANDROID_BUILD}" "${ANDROID_SUBMIT}" \
-              "${ANDROID_ARTIFACT_NAME}" "${ANDROID_ARTIFACT}" "${ANDROID_BUILD_NUMBER}"
-            row iOS "${IOS_RESULT}" "${IOS_BUILD}" "${IOS_SUBMIT}" \
-              "${IOS_ARTIFACT_NAME}" "${IOS_ARTIFACT}" "${IOS_BUILD_NUMBER}"
+            if is_update android; then
+              ota_row Android android
+            else
+              row Android "${ANDROID_RESULT}" "${ANDROID_BUILD}" "${ANDROID_SUBMIT}" \
+                "${ANDROID_ARTIFACT_NAME}" "${ANDROID_ARTIFACT}" "${ANDROID_BUILD_NUMBER}" \
+                "${ANDROID_SUBMISSION_URL}" "${ANDROID_DELIVERY}"
+            fi
+            if is_update ios; then
+              ota_row iOS ios
+            else
+              row iOS "${IOS_RESULT}" "${IOS_BUILD}" "${IOS_SUBMIT}" \
+                "${IOS_ARTIFACT_NAME}" "${IOS_ARTIFACT}" "${IOS_BUILD_NUMBER}" \
+                "${IOS_SUBMISSION_URL}" "${IOS_DELIVERY}"
+            fi
             echo
             case "${RELEASE_RESULT}" in
               success) echo "- Release assets: [v${VERSION}](${RELEASE_URL})" ;;
@@ -494,7 +984,12 @@ jobs:
             fi
             echo
             # The spoke's handoff target prints the manual-submission checklist.
-            if make -C "${WORKING_DIRECTORY}" --dry-run handoff > /dev/null 2>&1; then
+            # An OTA-only run has nothing to submit.
+            if [[ "${native_builds}" == "false" ]]; then
+              if [[ "${UPDATE_PUBLISH:-${UPDATE_RESULT}}" == "success" ]]; then
+                echo "No store submission is needed for this release: the OTA update reaches installed builds directly."
+              fi
+            elif make -C "${WORKING_DIRECTORY}" --dry-run handoff > /dev/null 2>&1; then
               VERSION="${VERSION}" IOS_BUILD="${IOS_BUILD_NUMBER}" ANDROID_BUILD="${ANDROID_BUILD_NUMBER}" \
                 make --no-print-directory --quiet -C "${WORKING_DIRECTORY}" handoff
             else

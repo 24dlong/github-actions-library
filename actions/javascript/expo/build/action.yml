@@ -81,6 +81,23 @@ runs:
         fi
       shell: bash
 
+    # eas build --local works in a temp copy of the repo, by default under /tmp.
+    # On ubuntu-26.04 the Android build failed there with "Disk quota exceeded"
+    # although the root disk had ~88 GB free, so build elsewhere. /mnt is not a
+    # separate disk on that image; it is just a path outside /tmp.
+    - name: Prepare build directory
+      if: inputs.platform == 'android'
+      run: |
+        set -euo pipefail
+        df -h / /tmp /mnt || true
+        findmnt -T /tmp || true
+        if [[ -d /mnt ]]; then
+          sudo mkdir -p /mnt/eas-build
+          sudo chown "$(id -u):$(id -g)" /mnt/eas-build
+          echo "EAS_LOCAL_BUILD_WORKINGDIR=/mnt/eas-build" >> "${GITHUB_ENV}"
+        fi
+      shell: bash
+
     - name: Select Xcode
       if: inputs.platform == 'ios'
       run: |
@@ -185,6 +202,11 @@ runs:
         echo "build-number=${build_number}" >> "${GITHUB_OUTPUT}"
       shell: bash
 
+    - name: Report disk usage
+      if: always() && inputs.platform == 'android'
+      run: df -h / /tmp /mnt || true
+      shell: bash
+
     # Right after package, before submit can fail the job. Only on a key miss
     # and only after a successful package, so a partial cache is never saved.
     - name: Save CocoaPods
@@ -210,25 +232,3 @@ runs:
         name: mobile-${{ inputs.platform }}-${{ inputs.version }}
         path: ${{ inputs.working-directory }}/${{ steps.package.outputs.path }}
         if-no-files-found: error
-
-    - name: Collect iOS gym logs
-      id: gym
-      if: always() && inputs.platform == 'ios'
-      run: |
-        set -euo pipefail
-        if [[ -d "${HOME}/Library/Logs/gym" ]]; then
-          mkdir -p gym-logs
-          cp -R "${HOME}/Library/Logs/gym/." gym-logs/
-          echo "found=true" >> "${GITHUB_OUTPUT}"
-        else
-          echo "found=false" >> "${GITHUB_OUTPUT}"
-        fi
-      shell: bash
-
-    - name: Upload gym logs
-      if: always() && steps.gym.outputs.found == 'true'
-      uses: actions/upload-artifact@v7
-      with:
-        name: mobile-ios-gym-${{ inputs.version }}
-        path: gym-logs
-        if-no-files-found: ignore

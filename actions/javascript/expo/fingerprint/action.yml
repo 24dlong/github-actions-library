@@ -1,0 +1,218 @@
+name: Expo Fingerprint
+description: >-
+  Decides, per platform, whether a release needs a native store build or can
+  ship as an OTA update. Runs the spoke's `make fingerprint` (the native
+  fingerprint, which is also the runtime version a build embeds) and compares
+  it with the fingerprint of the last native build of that platform, which the
+  Release job stores as a `mobile-fingerprint-<platform>-<version>.json`
+  release asset. Same fingerprint means the installed builds can take the
+  change as an update; a different, missing or unreadable one means a build.
+  Anything it cannot decide falls back to a native build, which is the safe
+  choice. Checks out the repository (full history) and installs dependencies
+  itself, so run it as its own job, after Expo Detect.
+
+inputs:
+  working-directory:
+    description: Directory of the Expo project, relative to the repository root (e.g. "apps/mobile").
+    required: true
+  version:
+    description: Version being published, without the leading v. Exported as APP_VERSION.
+    required: true
+  platforms:
+    description: Comma-separated platforms to decide for (ios, android, or both).
+    required: false
+    default: ios,android
+  force:
+    description: Build every platform regardless of the fingerprint.
+    required: false
+    default: "false"
+  ota:
+    description: >-
+      Allow OTA updates. When false, or when the spoke lacks the `fingerprint`
+      or `update` make targets, every platform builds natively.
+    required: false
+    default: "true"
+  github-token:
+    description: Token that can read releases. Needs contents read.
+    required: false
+    default: ${{ github.token }}
+  codeartifact-aws-account-id:
+    description: AWS account ID that owns the CodeArtifact domain.
+    required: true
+  codeartifact-aws-region:
+    description: AWS region of the CodeArtifact domain.
+    required: true
+  codeartifact-aws-role-to-assume:
+    description: ARN of the AWS IAM role allowed to read from CodeArtifact.
+    required: true
+  codeartifact-domain:
+    description: CodeArtifact domain name.
+    required: true
+  codeartifact-repository:
+    description: CodeArtifact repository name.
+    required: true
+  codeartifact-registry-namespace:
+    description: npm scope served by CodeArtifact (e.g. "@my-org").
+    required: true
+
+outputs:
+  build-platforms:
+    description: Comma-separated platforms that need a native build. Empty when none do.
+    value: ${{ steps.decide.outputs.build-platforms }}
+  update-platforms:
+    description: Comma-separated platforms whose native fingerprint is unchanged, so an OTA update is enough. Empty when none are.
+    value: ${{ steps.decide.outputs.update-platforms }}
+  fingerprints:
+    description: JSON object of platform to fingerprint, for the platforms it could be read for.
+    value: ${{ steps.decide.outputs.fingerprints }}
+  reason:
+    description: One-line explanation of the decision.
+    value: ${{ steps.decide.outputs.reason }}
+
+runs:
+  using: composite
+  steps:
+    # Full history and tags: the baseline release must be an ancestor.
+    - name: Checkout Code
+      uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+
+    # make fingerprint evaluates the app config and the autolinking of every
+    # native dependency, so the dependencies must be installed. Decide below
+    # falls back to a native build if this is all it cannot do.
+    - name: Setup JavaScript
+      uses: 24dlong/github-actions-library/actions/javascript/setup@v7
+      with:
+        codeartifact-aws-account-id: ${{ inputs.codeartifact-aws-account-id }}
+        codeartifact-aws-region: ${{ inputs.codeartifact-aws-region }}
+        codeartifact-aws-role-to-assume: ${{ inputs.codeartifact-aws-role-to-assume }}
+        codeartifact-domain: ${{ inputs.codeartifact-domain }}
+        codeartifact-repository: ${{ inputs.codeartifact-repository }}
+        codeartifact-registry-namespace: ${{ inputs.codeartifact-registry-namespace }}
+
+    - name: Decide
+      id: decide
+      env:
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_PLATFORMS: ${{ inputs.platforms }}
+        INPUT_FORCE: ${{ inputs.force }}
+        INPUT_OTA: ${{ inputs.ota }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+
+        version="${INPUT_VERSION#v}"
+        platforms=()
+        IFS=',' read -r -a requested <<< "${INPUT_PLATFORMS}"
+        for p in "${requested[@]}"; do
+          p="${p//[[:space:]]/}"
+          [[ -n "${p}" ]] && platforms+=("${p}")
+        done
+
+        build=()
+        update=()
+        fingerprints='{}'
+        rows=()
+        reason=""
+
+        # Newest older release whose tag is an ancestor of HEAD and that has a
+        # fingerprint asset for the platform. Prints that asset's fingerprint
+        # (empty when there is none or it cannot be read).
+        baseline() {
+          local platform="$1" tag file fp
+          while IFS= read -r tag; do
+            [[ -n "${tag}" ]] || continue
+            git merge-base --is-ancestor "refs/tags/${tag}" HEAD 2> /dev/null || continue
+            file="$(gh release download "${tag}" --repo "${GITHUB_REPOSITORY}" \
+              --pattern "mobile-fingerprint-${platform}-*.json" --output - 2> /dev/null || true)"
+            fp="$(jq -r '.fingerprint // empty' <<< "${file}" 2> /dev/null || true)"
+            if [[ "${fp}" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "${tag} ${fp}"
+              return 0
+            fi
+          done < <(
+            gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" 2> /dev/null \
+              | jq -r --arg platform "${platform}" '
+                  .[]
+                  | select(.draft | not)
+                  | select(.tag_name | startswith("v"))
+                  | select(.assets | any(.name | startswith("mobile-fingerprint-\($platform)-")))
+                  | .tag_name' \
+              || true
+          )
+          return 0
+        }
+
+        all_build() {
+          build=("${platforms[@]}")
+          update=()
+          reason="$1"
+          for p in "${platforms[@]}"; do rows+=("| ${p} | build | $1 |"); done
+        }
+
+        if [[ "${INPUT_OTA}" != "true" ]]; then
+          all_build "OTA updates are disabled"
+        elif ! make -C "${INPUT_WORKING_DIRECTORY}" --dry-run fingerprint > /dev/null 2>&1 \
+          || ! make -C "${INPUT_WORKING_DIRECTORY}" --dry-run update PLATFORM=all > /dev/null 2>&1; then
+          all_build "No fingerprint and update targets in ${INPUT_WORKING_DIRECTORY}/Makefile"
+        else
+          for p in "${platforms[@]}"; do
+            # The last 40-hex line is the answer; pnpm may print notices before it.
+            out="$(APP_VERSION="${version}" make -C "${INPUT_WORKING_DIRECTORY}" --no-print-directory --silent fingerprint PLATFORM="${p}" 2> "${RUNNER_TEMP:-/tmp}/fingerprint-${p}.err" || true)"
+            fp="$(grep -E '^[0-9a-f]{40}$' <<< "${out}" | tail -n 1 || true)"
+            if [[ -z "${fp}" ]]; then
+              echo "::warning::Could not read the ${p} fingerprint, building natively. $(tail -n 3 "${RUNNER_TEMP:-/tmp}/fingerprint-${p}.err" 2> /dev/null | tr '\n' ' ')"
+              build+=("${p}")
+              rows+=("| ${p} | build | fingerprint unreadable |")
+              continue
+            fi
+            fingerprints="$(jq -c --arg p "${p}" --arg fp "${fp}" '. + {($p): $fp}' <<< "${fingerprints}")"
+            if [[ "${INPUT_FORCE}" == "true" ]]; then
+              build+=("${p}")
+              rows+=("| ${p} | build | forced (\`${fp:0:8}\`) |")
+              continue
+            fi
+            read -r base_tag base_fp <<< "$(baseline "${p}")"
+            if [[ -z "${base_fp:-}" ]]; then
+              build+=("${p}")
+              rows+=("| ${p} | build | no earlier native build recorded a fingerprint (\`${fp:0:8}\`) |")
+            elif [[ "${base_fp}" == "${fp}" ]]; then
+              update+=("${p}")
+              rows+=("| ${p} | OTA update | native fingerprint \`${fp:0:8}\` unchanged since ${base_tag} |")
+            else
+              build+=("${p}")
+              rows+=("| ${p} | build | native fingerprint changed (\`${base_fp:0:8}\` in ${base_tag}, \`${fp:0:8}\` now) |")
+            fi
+          done
+          if [[ "${INPUT_FORCE}" == "true" ]]; then
+            reason="Forced"
+          elif (( ${#build[@]} && ${#update[@]} )); then
+            reason="Native changes on ${build[*]}, OTA update for ${update[*]}"
+          elif (( ${#build[@]} )); then
+            reason="Native changes, building ${build[*]}"
+          else
+            reason="Native fingerprint unchanged, OTA update for ${update[*]}"
+          fi
+        fi
+
+        join() { local IFS=,; echo "$*"; }
+        {
+          echo "build-platforms=$(join "${build[@]+"${build[@]}"}")"
+          echo "update-platforms=$(join "${update[@]+"${update[@]}"}")"
+          echo "fingerprints=${fingerprints}"
+          echo "reason=${reason}"
+        } >> "${GITHUB_OUTPUT}"
+
+        {
+          echo "## Expo fingerprint"
+          echo
+          echo "- Version: \`${version}\`"
+          echo "- Decision: ${reason}"
+          echo
+          echo "| Platform | Action | Why |"
+          echo "| --- | --- | --- |"
+          printf '%s\n' "${rows[@]+"${rows[@]}"}"
+        } >> "${GITHUB_STEP_SUMMARY}"
+      shell: bash
