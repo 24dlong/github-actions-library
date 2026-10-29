@@ -2,6 +2,10 @@ name: Upgrade Expo dependencies
 description: Upgrades Expo dependencies based on the Expo SDK version in the target branch
 
 inputs:
+  working-directory:
+    description: Directory of the Expo project, relative to the repository root (e.g. "apps/mobile").
+    required: false
+    default: .
   github-app-client-id:
     description: GitHub App client ID used to commit dependency updates.
     required: true
@@ -64,6 +68,7 @@ runs:
       shell: bash
 
     - name: Upgrade Expo Dependencies
+      working-directory: ${{ inputs.working-directory }}
       env:
         CI: false # pnpm enables frozen-lockfile when CI=true
       run: pnpm exec expo install --fix
