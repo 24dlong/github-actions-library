@@ -4,9 +4,15 @@
 #
 # 1. release: JavaScript Publish (javascript-publish.yml): quality gate, then
 #    the caller's `make publish` (semantic-release).
-# 2. publish: only when a new version was released. Builds and pushes the
-#    container image tagged with that version, then opens an image_tag bump
-#    pull request in the infra repository.
+# 2. detect: only when a new version was released. Skips the image when none
+#    of `paths` changed since the previous v* tag (all releases publish when
+#    `paths` is empty).
+# 3. publish: only when detect says so. Builds and pushes the container image
+#    tagged with that version, then opens an image_tag bump pull request in the
+#    infra repository.
+#
+# With a caller job named Publish, the checks are Publish / Release, Publish /
+# Detect and Publish / Publish.
 #
 # Reads these caller repository (or GitHub Environment) variables:
 #   CodeArtifact: AWS_CODE_ARTIFACT_ACCOUNT_ID, AWS_REGION, AWS_ROLE_TO_ASSUME,
@@ -55,6 +61,19 @@ on:
         required: false
         type: string
         default: production
+      paths:
+        description: >-
+          Newline-separated git pathspecs the image is built from (for example
+          "apps/web"). Publish runs only when one changed since the previous v*
+          tag. Empty always publishes.
+        required: false
+        type: string
+        default: ""
+      force:
+        description: Publish the image regardless of changed paths.
+        required: false
+        type: boolean
+        default: false
     secrets:
       github-app-private-key:
         description: Private key of the GitHub App installed on the infra repository.
@@ -74,10 +93,27 @@ jobs:
       id-token: write
     uses: ./.github/workflows/javascript-publish.yml
 
-  publish:
-    name: Publish
+  detect:
+    name: Detect
     needs: release
     if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      publish: ${{ steps.decide.outputs.publish }}
+    steps:
+      - id: decide
+        uses: 24dlong/github-actions-library/actions/application/detect@v7
+        with:
+          version: ${{ needs.release.outputs.version }}
+          paths: ${{ inputs.paths }}
+          force: ${{ inputs.force }}
+
+  publish:
+    name: Publish
+    needs: [release, detect]
+    if: needs.release.outputs.released == 'true' && needs.detect.outputs.publish == 'true'
     runs-on: ${{ inputs.runs-on }}
     environment: ${{ inputs.environment }}
     permissions:
