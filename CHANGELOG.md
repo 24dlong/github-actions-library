@@ -1,3 +1,20 @@
+## 7.8.2 (2026-10-29)
+
+
+- fix: align @react-native/* packages and dedupe after expo install --fix (#122)
+- react-native is in Expo's version map but its @react-native/* companions
+(metro-config, babel-preset, ...) are not, so --fix moved react-native and
+left them behind. The mismatch makes pnpm install two react-native variants
+and expo-doctor fails on the duplicate native modules.
+- - Record the resolved react-native version before the fix, then move
+  @react-native/* dependencies (literal or catalog) that tracked it to the
+  new version. Packages on other versions are left alone.
+- Run pnpm dedupe when the upgrade changed files; the lockfile otherwise
+  keeps old transitive versions (e.g. react-native-web) next to the new ones.
+- Rename restore-catalog.mjs to reconcile-specifiers.mjs; it now covers
+  both catalog restore and react-native alignment.
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
 ## 7.8.1 (2026-10-29)
 
 
