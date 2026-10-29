@@ -363,6 +363,14 @@ It may also provide these optional targets. The workflow skips or degrades witho
   target runs first so an invalid store config fails before it reaches the store.
 - `handoff`, with `VERSION`, `IOS_BUILD` and `ANDROID_BUILD` (build numbers) in the
   environment: print a markdown "to ship" checklist for the job summary.
+- `fingerprint` and `update`, together, for OTA updates (see "OTA updates" below).
+  `fingerprint`, with `PLATFORM` (`ios` or `android`) and `APP_VERSION` in the environment:
+  print the native fingerprint, the hash that is also the runtime version a build embeds.
+  It must be the same before and after prebuild, or the build fails, and must not depend on
+  `APP_VERSION`. `update`, with `PLATFORM` (`ios`, `android` or `all`) and `MESSAGE`: publish
+  the current JavaScript and assets as an update for builds with the same fingerprint (and
+  upload source maps). The job has `APP_VERSION`, `EXPO_TOKEN` and `SENTRY_AUTH_TOKEN` set.
+  Without both targets every change builds natively.
 
 `make install` must leave CodeArtifact auth in `~/.npmrc`. A local EAS build copies the
 repo to a temp directory and runs its own `pnpm install` there, so a repo-local `.npmrc`
@@ -422,21 +430,53 @@ caller job must grant `id-token: write`, `contents: write` (release assets) and
 `actions: write`. A called workflow that asks for more permissions than its caller grants
 fails the whole run at startup, so grant `contents: write` before moving `@v7` to a version
 with release assets (7.3.0). Name the caller job `Mobile` so the checks are `Mobile / Detect`,
-`Mobile / Notes`, `Mobile / Android`, `Mobile / iOS`, `Mobile / Submissions`, `Mobile / Release`,
-`Mobile / Metadata` and `Mobile / Summary`.
+`Mobile / Fingerprint`, `Mobile / Notes`, `Mobile / Android`, `Mobile / iOS`, `Mobile / Update`,
+`Mobile / Submissions`, `Mobile / Release`, `Mobile / Metadata` and `Mobile / Summary`.
 
-`Detect` (the `actions/javascript/expo/detect` action) decides whether to build. It compares
-the release tag `v<version>` with the newest older release that has `mobile-<platform>-*`
-assets for every requested platform (the last mobile build), falling back to the previous
-`v*` tag when no release has them, and builds only when a path in the
+`Detect` (the `actions/javascript/expo/detect` action) decides whether there is mobile work
+(a build or an OTA update). It compares the release tag `v<version>` with the newest older
+release that has `mobile-<platform>-*` (build) or `mobile-ota-<platform>-*` (update record)
+assets for every requested platform (the last handled release), falling back to the previous
+`v*` tag when no release has them, and acts only when a path in the
 `paths` input (newline-separated pathspecs, for example `apps/mobile`) changed between them.
 An empty `paths` always builds, as does `force: true`, a missing tag, or a first release.
 `version` may be empty (nothing released): with `force`, the latest `v*` tag's version is
 built; otherwise nothing is built. Detect writes the decision and the changed files to the
-job summary. A release whose builds failed, or never ran, has no assets, so the next release
-is compared against the last release that did build and retries those changes. A failed
+job summary. A release whose builds or update failed, or never ran, has no assets, so the next
+release is compared against the last release that was handled and retries those changes. A failed
 submit does not undo that: retry it from the artifact. With `release-assets` off, Detect has
 no marker and compares with the previous tag only.
+
+#### OTA updates
+
+With `expo-updates` configured to use the native fingerprint as the runtime version, an
+installed build downloads JavaScript and asset changes from EAS on launch, with no store build
+or review. `Mobile / Fingerprint` (the `actions/javascript/expo/fingerprint` action; it
+installs dependencies, so it needs `id-token: write` and the `environment`) runs after
+`Detect` found changed paths and decides per platform:
+
+- the spoke's `make fingerprint` equals the fingerprint of the last native build of that
+  platform: **OTA update**. `Mobile / Update` runs the spoke's `make update` once on Ubuntu
+  (`PLATFORM=all` when both platforms qualify) and the platform's build job is skipped;
+- different, missing or unreadable: **native build**, as before. This is the fallback for
+  everything it cannot decide: a missing baseline, a failed `make fingerprint`, a spoke without
+  the `fingerprint` and `update` targets, `ota: false`, or `force: true`. If the job itself
+  fails, `Notes`, `Android` and `iOS` still run for every requested platform.
+
+The baseline is a release asset. `Mobile / Release` attaches
+`mobile-fingerprint-<platform>-<version>.json` (`{platform, version, fingerprint}`) for each
+platform it built natively, and `mobile-ota-<platform>-<version>.json` for each platform it
+updated. Fingerprint compares with the newest older release that is an ancestor of the commit
+and has a fingerprint asset for that platform. Only the first native build after adopting this
+needs a bootstrap: until a release has a fingerprint asset, every change builds. An OTA run
+needs `release-assets` on to leave a record, and without the record Detect cannot tell the
+release was handled.
+
+An OTA update does not go through `Submissions` or the store checklist, and the summary says so.
+If `Mobile / Update` fails, nothing reached users; re-run the job. A lockfile-only change that
+leaves the fingerprint alone also publishes an update with the same content; it is harmless.
+Native changes are the only thing that need a store build, and a native change in one platform
+leaves the other on OTA.
 
 ```yaml
 # .github/workflows/merge.yml (after the job that runs JavaScript Application Publish)
