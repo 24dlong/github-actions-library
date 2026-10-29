@@ -339,6 +339,12 @@ from JavaScript Application Publish: different runners, secrets and job graph. i
 on `macos-26` with Xcode 26.4.1 selected. Android runs on `ubuntu-26.04` with Temurin 17.
 Android `timeout-minutes` is 45; iOS is 60.
 
+The reference caller is [cookiecutter-react-monorepo](https://github.com/24dlong/cookiecutter-react-monorepo).
+Its [`docs/mobile`](https://github.com/24dlong/cookiecutter-react-monorepo/tree/main/docs/mobile)
+guides cover the app side of this contract: account and credential setup, the per-app checklist,
+the Makefile targets and files an app must provide, the release flow, OTA updates, rollback and
+troubleshooting.
+
 The spoke's app Makefile must provide:
 
 - `package`, with `PLATFORM` (`ios` or `android`), `PROFILE`, optional `OUTPUT` (an exact
