@@ -1,3 +1,14 @@
+## 7.8.1 (2026-10-29)
+
+
+- fix: finish expo install --fix when the app config is dynamic (#120)
+- With app.config.ts Expo cannot add config plugins for the packages it
+just installed, so --fix exits 1 after the dependencies and before the
+devDependencies. Run it a second time to finish the devDependencies,
+then expo install --check so the step still fails if anything is out of
+line with the SDK.
+- Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>
+
 ## 7.8.0 (2026-10-29)
 
 
