@@ -71,6 +71,7 @@ here names its jobs `Core`, `Expo` and `Visual Tests`, and callers name their jo
 | `Quality Gate / Core` | always |
 | `Quality Gate / Expo` | `javascript-pull-request.yml` with `expo-working-directory` set |
 | `Quality Gate / Visual Tests` | `javascript-pull-request.yml` with `visual-tests: true` |
+| `Quality Gate / Container E2E` | `javascript-pull-request.yml` with `container-e2e: true` |
 
 ```yaml
 jobs:
@@ -199,7 +200,8 @@ read the six CodeArtifact repository variables (`AWS_CODE_ARTIFACT_ACCOUNT_ID`,
 
 #### JavaScript Pull Request
 Runs `Core` (the JavaScript Quality Gate), plus `Expo` when `expo-working-directory` is
-set and `Visual Tests` when `visual-tests` is true. Name the caller job
+set, `Visual Tests` when `visual-tests` is true and `Container E2E` when
+`container-e2e` is true. Name the caller job
 `Quality Gate` (see Required status checks).
 
 ```yaml
@@ -218,6 +220,7 @@ jobs:
     with:
       expo-working-directory: apps/mobile # optional, runs Quality Gate / Expo
       visual-tests: true # optional, runs Quality Gate / Visual Tests
+      container-e2e: true # optional, runs Quality Gate / Container E2E
     secrets:
       chromatic-project-token: ${{ secrets.CHROMATIC_PROJECT_TOKEN }} # with visual-tests
 ```
@@ -225,6 +228,14 @@ jobs:
 `Visual Tests` runs the Storybook doctors (`pnpm doctor:storybook:web`,
 `pnpm doctor:storybook:native`), builds the iOS Storybook (`pnpm build-storybook:ios`) and
 runs Chromatic.
+
+`Container E2E` (off by default) sets up JavaScript with the same CodeArtifact
+authentication as `Core`, then runs `make e2e-container`, which must build the production
+image and run the Playwright tests against it with external services stubbed (the
+`package` target reads the exported `CODEARTIFACT_AUTH_TOKEN`, `AWS_ACCOUNT_ID`,
+`AWS_CODE_ARTIFACT_DOMAIN`, `AWS_CODE_ARTIFACT_REPOSITORY` and `REGISTRY_NAMESPACE`). On
+failure it uploads `apps/web/playwright-report` as the `container-e2e-playwright-report`
+artifact. Enable it only in repositories whose Makefile defines `e2e-container`.
 
 #### JavaScript Publish
 Runs `Release` (the JavaScript Publish action: quality gate, then `make publish`). When
