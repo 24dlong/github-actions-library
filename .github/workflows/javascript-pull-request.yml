@@ -3,10 +3,13 @@
 #
 # Always runs `Core`. `Expo` runs when `expo-working-directory` is set, and
 # `Visual Tests` runs when `visual-tests` is true (also pass
-# `chromatic-project-token`).
+# `chromatic-project-token`). `Container E2E` runs when `container-e2e` is true
+# (the caller's `make e2e-container` builds the production image and runs
+# Playwright against it; needs Docker, which ubuntu-latest has).
 #
 # Callers name their job `Quality Gate` so the reported checks are
-# `Quality Gate / Core`, `Quality Gate / Expo` and `Quality Gate / Visual Tests`.
+# `Quality Gate / Core`, `Quality Gate / Expo`, `Quality Gate / Visual Tests`
+# and `Quality Gate / Container E2E`.
 #
 # Reads these caller repository variables (all CodeArtifact):
 #   AWS_CODE_ARTIFACT_ACCOUNT_ID, AWS_REGION, AWS_ROLE_TO_ASSUME,
@@ -28,6 +31,14 @@ on:
         default: ""
       visual-tests:
         description: Run Storybook doctor and Chromatic visual tests.
+        required: false
+        type: boolean
+        default: false
+      container-e2e:
+        description: >-
+          Build the production container image and run the Playwright E2E tests
+          against it (`make e2e-container`). Requires that target in the caller's
+          Makefile.
         required: false
         type: boolean
         default: false
@@ -82,6 +93,24 @@ jobs:
       - uses: 24dlong/github-actions-library/actions/javascript/visual-tests@v7
         with:
           chromatic-project-token: ${{ secrets.chromatic-project-token }}
+          codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
+          codeartifact-aws-region: ${{ vars.AWS_REGION }}
+          codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          codeartifact-domain: ${{ vars.AWS_CODE_ARTIFACT_DOMAIN }}
+          codeartifact-repository: ${{ vars.AWS_CODE_ARTIFACT_REPOSITORY }}
+          codeartifact-registry-namespace: ${{ vars.REGISTRY_NAMESPACE }}
+
+  container-e2e:
+    name: Container E2E
+    if: inputs.container-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: 24dlong/github-actions-library/actions/javascript/container-e2e@v7
+        with:
           codeartifact-aws-account-id: ${{ vars.AWS_CODE_ARTIFACT_ACCOUNT_ID }}
           codeartifact-aws-region: ${{ vars.AWS_REGION }}
           codeartifact-aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}

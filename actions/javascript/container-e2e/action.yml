@@ -1,0 +1,63 @@
+name: Container E2E
+description: >-
+  Builds the production container image and runs the Playwright end-to-end tests
+  against it with every external service stubbed, by running the repository's
+  `make e2e-container` target. Needs Docker on the runner.
+
+inputs:
+  codeartifact-aws-account-id:
+    description: AWS account ID that owns the CodeArtifact domain.
+    required: true
+  codeartifact-aws-region:
+    description: AWS region of the CodeArtifact domain.
+    required: true
+  codeartifact-aws-role-to-assume:
+    description: ARN of the AWS IAM role allowed to read from CodeArtifact.
+    required: true
+  codeartifact-domain:
+    description: CodeArtifact domain name.
+    required: true
+  codeartifact-repository:
+    description: CodeArtifact repository name.
+    required: true
+  codeartifact-registry-namespace:
+    description: npm scope served by CodeArtifact (e.g. "@my-org").
+    required: true
+  report-path:
+    description: >-
+      Path of the Playwright HTML report, relative to the repository root. It is
+      uploaded as an artifact when the run fails.
+    required: false
+    default: apps/web/playwright-report
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout Code
+      uses: actions/checkout@v7
+
+    # Exports CODEARTIFACT_AUTH_TOKEN, AWS_ACCOUNT_ID, AWS_CODE_ARTIFACT_DOMAIN,
+    # AWS_CODE_ARTIFACT_REPOSITORY and REGISTRY_NAMESPACE, which is what the
+    # `package` target (run by `make e2e-container`) reads to build the image.
+    - name: Setup JavaScript
+      uses: 24dlong/github-actions-library/actions/javascript/setup@v7
+      with:
+        codeartifact-aws-account-id: ${{ inputs.codeartifact-aws-account-id }}
+        codeartifact-aws-region: ${{ inputs.codeartifact-aws-region }}
+        codeartifact-aws-role-to-assume: ${{ inputs.codeartifact-aws-role-to-assume }}
+        codeartifact-domain: ${{ inputs.codeartifact-domain }}
+        codeartifact-repository: ${{ inputs.codeartifact-repository }}
+        codeartifact-registry-namespace: ${{ inputs.codeartifact-registry-namespace }}
+
+    - name: Run Container E2E
+      run: make e2e-container
+      shell: bash
+
+    - name: Upload Playwright Report
+      if: failure()
+      uses: actions/upload-artifact@v7
+      with:
+        name: container-e2e-playwright-report
+        path: ${{ inputs.report-path }}
+        if-no-files-found: ignore
+        retention-days: 7
